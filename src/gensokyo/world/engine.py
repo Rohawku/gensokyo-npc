@@ -6,6 +6,7 @@ from pydantic import BaseModel, ValidationError
 from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
+from gensokyo.world.quest import compute_stage
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
     apply_emotion_decay,
@@ -99,7 +100,23 @@ class WorldEngine:
         handler = self._handlers().get(action.tool)
         if handler is None:
             return ActionResult.failed(ErrorCode.UNKNOWN_TOOL, f"动作 {action.tool} 尚未实现。")
-        return handler(action, args)
+        result = handler(action, args)
+        if result.ok:
+            self.refresh_quest()
+        return result
+
+    def refresh_quest(self) -> None:
+        clues = self.defs.clue_facts()
+        self.state.quest.clues_obtained = self.state.player.known_facts & clues
+
+        target = compute_stage(self.state, self.defs)
+        if target > self.state.quest.stage:
+            self.state.quest.stage = target
+            self._emit(
+                EventKind.QUEST_ADVANCE,
+                "world",
+                {"stage": int(target), "stage_name": target.name},
+            )
 
     def available_tools(self, npc_id: NpcId) -> list[ToolSpec]:
         """情绪状态机的落点：模式变化会真的改变 NPC 能做什么，
