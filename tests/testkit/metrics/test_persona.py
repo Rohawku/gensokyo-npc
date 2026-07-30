@@ -293,3 +293,31 @@ def test_the_same_line_in_two_different_episodes_is_not_repetition() -> None:
 
 def test_library_size_is_reported() -> None:
     assert persona_library_sizes()["out_of_bounds"] == len(OUT_OF_BOUNDS_WORDS)
+
+
+def test_plot_tools_do_not_inflate_behaviour_divergence() -> None:
+    """行为偏离度衡量性格表达，不该被剧情进度污染。
+
+    实测未排除时芙兰散度虚高到 1.000——因为她的基线只列了 4 个性格性工具，
+    而 reveal_info 必然出现在实际分布里，于是「走了剧情」被读成「人设崩了」。
+    """
+    baseline = DEFS.characters["flandre"].behavior_baseline["tool_frequency"]
+    on_baseline = max(baseline, key=lambda k: baseline[k])
+
+    def traj(tools: list[str]) -> object:
+        return episode(
+            turns=[
+                say_turn(
+                    npc_id="flandre",
+                    tool_calls=[call(t) for t in tools],
+                    tool_results=[ok_result() for _ in tools],
+                )
+            ]
+        )
+
+    clean = persona_metrics([traj([on_baseline] * 8)], DEFS).behavior_divergence["flandre"]
+    polluted = persona_metrics(
+        [traj([on_baseline] * 8 + ["reveal_info"] * 8)], DEFS
+    ).behavior_divergence["flandre"]
+
+    assert polluted == clean, "剧情工具不该改变行为偏离度"

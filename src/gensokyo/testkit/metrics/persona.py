@@ -17,6 +17,15 @@ from gensokyo.world.ids import NpcId
 
 BASELINE_KEY = "tool_frequency"
 
+PLOT_TOOLS = frozenset({"reveal_info", "travel_to", "use_spellcard"})
+"""剧情主线工具，不计入行为偏离度。
+
+这个指标衡量的是**性格表达**——她爱不爱拿东西、爱不爱问话。而剧情工具的
+调用由任务状态驱动、与性格无关：线索该给的时候谁都得 reveal_info。把它们
+算进去会给散度一个与人设无关的结构性下限，实测让芙兰虚高到 1.000、魔理沙
+0.884，把「走了剧情」误读成「人设崩了」。
+"""
+
 OUT_OF_BOUNDS_WORDS: tuple[str, ...] = (
     "手机",
     "电脑",
@@ -66,6 +75,12 @@ class PersonaMetrics(BaseModel):
 
 def _rate(numerator: int, denominator: int) -> float:
     return numerator / denominator if denominator else 0.0
+
+
+def _without_plot_tools(weights: dict[str, float]) -> dict[str, float]:
+    """期望与实际两侧都要排除剧情工具。只排一侧会凭空造出散度——
+    魔理沙的基线里本来就列了 use_spellcard。"""
+    return {k: v for k, v in weights.items() if k not in PLOT_TOOLS}
 
 
 def _normalized(weights: dict[str, float]) -> dict[str, float]:
@@ -183,12 +198,16 @@ def persona_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Pers
                 out_of_bounds += 1
 
     observed_counts = _observed_tool_counts(trajectories)
-    observed = {npc: _normalized(counts) for npc, counts in observed_counts.items()}
+    observed = {
+        npc: _normalized(_without_plot_tools(counts)) for npc, counts in observed_counts.items()
+    }
 
     divergence: dict[str, float] = {}
     for npc_id, actual in observed.items():
         card = defs.characters.get(NpcId(npc_id))
-        expected = dict(card.behavior_baseline.get(BASELINE_KEY, {})) if card else {}
+        expected = (
+            _without_plot_tools(dict(card.behavior_baseline.get(BASELINE_KEY, {}))) if card else {}
+        )
         if not expected or not actual:
             # 没有基线就没有「期望」可言；一次工具都没调则是没有数据。两种
             # 情况都不给数字，因为 0.0 会被读成「完全符合基线」，而 1.0 会被
@@ -214,10 +233,15 @@ def expected_baselines(defs: WorldDefs) -> dict[str, dict[str, float]]:
     """各角色卡的期望工具分布，归一化。报告要把期望和实际并排印出来——
     只给一个散度值的话，读的人无法判断偏在哪个工具上。"""
     return {
-        str(npc_id): _normalized(dict(card.behavior_baseline.get(BASELINE_KEY, {})))
+        str(npc_id): _normalized(
+            _without_plot_tools(dict(card.behavior_baseline.get(BASELINE_KEY, {})))
+        )
         for npc_id, card in defs.characters.items()
     }
 
 
 def persona_library_sizes() -> dict[str, int]:
-    return {"out_of_bounds": len(OUT_OF_BOUNDS_WORDS)}
+    return {
+        "out_of_bounds": len(OUT_OF_BOUNDS_WORDS),
+        "plot_tools_excluded": len(PLOT_TOOLS),
+    }
