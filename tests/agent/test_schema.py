@@ -66,3 +66,37 @@ def test_npc_turn_defaults_observability_fields() -> None:
     assert turn.tool_calls == []
     assert turn.tool_results == []
     assert turn.llm_calls == 0
+
+
+def test_parse_survives_braces_in_surrounding_prose() -> None:
+    """中文模型常带 {笑} 这类装饰标记。贪婪匹配会把它们一起吞进来。"""
+    raw = '注意{重要}：{"thought": "t", "utterance": "u"} 顺便说下{笑}'
+
+    turn = parse_npc_turn(raw)
+
+    assert turn.utterance == "u"
+
+
+def test_parse_takes_first_object_when_model_emits_two() -> None:
+    """有些小模型会先输出草稿再输出终稿。解析失败会稳定浪费一次重试。"""
+    raw = '{"thought": "草稿", "utterance": "a"} {"thought": "终稿", "utterance": "b"}'
+
+    turn = parse_npc_turn(raw)
+
+    assert turn.utterance == "a"
+
+
+def test_parse_keeps_nested_braces_intact() -> None:
+    raw = '{"thought":"t","tool_calls":[{"tool":"say","args":{"text":"a{b}c"}}],"utterance":"u"}'
+
+    turn = parse_npc_turn(raw)
+
+    assert turn.tool_calls[0].args == {"text": "a{b}c"}
+
+
+def test_parse_ignores_braces_inside_string_literals() -> None:
+    raw = '{"thought": "他说「}」然后走了", "utterance": "u"}'
+
+    turn = parse_npc_turn(raw)
+
+    assert turn.utterance == "u"

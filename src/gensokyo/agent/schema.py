@@ -1,12 +1,10 @@
 import json
-import re
+from collections.abc import Iterator
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
 from gensokyo.world.tools import TOOL_REGISTRY, Action, ActionResult
-
-_JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class TurnParseError(ValueError):
@@ -28,18 +26,57 @@ class NpcTurn(BaseModel):
     latency_ms: int = 0
 
 
+def _balanced_objects(raw: str) -> Iterator[str]:
+    """依次产出每一段花括号配平的顶层片段。
+
+    贪婪正则 `\\{.*\\}` 会从第一个左括号一直吞到最后一个右括号，于是
+    「前后废话里的 {笑} 这类装饰标记」和「模型并排输出两个对象」都会
+    让解析失败。配平扫描则能逐个给出候选，由调用方挑第一个真正是
+    JSON 对象的。字符串字面量内的括号不计数。
+    """
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
+
+    for i, ch in enumerate(raw):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0:
+                yield raw[start : i + 1]
+
+
+def _extract_turn_payload(raw: str) -> dict[str, Any]:
+    last_error: str | None = None
+    for candidate in _balanced_objects(raw):
+        try:
+            parsed: Any = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = str(exc)
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    if last_error is not None:
+        raise TurnParseError(f"JSON 解析失败：{last_error}")
+    raise TurnParseError(f"回复里找不到 JSON 对象：{raw[:120]!r}")
+
+
 def parse_npc_turn(raw: str, actor: str = "") -> NpcTurn:
-    match = _JSON_BLOCK.search(raw)
-    if match is None:
-        raise TurnParseError(f"回复里找不到 JSON 对象：{raw[:120]!r}")
-
-    try:
-        data: Any = json.loads(match.group(0))
-    except json.JSONDecodeError as exc:
-        raise TurnParseError(f"JSON 解析失败：{exc}") from exc
-
-    if not isinstance(data, dict):
-        raise TurnParseError("JSON 顶层必须是对象")
+    data = _extract_turn_payload(raw)
 
     calls: list[Action] = []
     for item in data.get("tool_calls") or []:
