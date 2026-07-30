@@ -1,0 +1,20 @@
+- id: barrier_anomaly_time
+  holder: reimu
+  content: 结界在三天前的子时出现了一次异常波动，方向正对无缘塚。
+  is_clue: true
+  reveal_conditions:
+    attitude_gte: 40
+
+- id: flower_magic_composition
+  holder: marisa
+  content: 那种花里有能吸附记忆的魔力结晶，越靠近吸得越快。
+  is_clue: true
+  reveal_conditions:
+    traded_item_in: [rare_book, magic_mushroom]
+
+- id: ancient_oblivion_memory
+  holder: flandre
+  content: 很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。
+  is_clue: true
+  reveal_conditions:
+    attitude_gte: 60

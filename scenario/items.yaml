@@ -1,0 +1,19 @@
+- id: offering_coin
+  name: 赛钱
+  description: 一枚硬币。灵梦对此非常敏感。
+
+- id: rare_book
+  name: 珍稀魔法书
+  description: 魔理沙一定会想要的东西。
+
+- id: magic_mushroom
+  name: 魔法蘑菇
+  description: 森林里采的，可做魔法材料。
+
+- id: withered_flower
+  name: 忘却之花
+  description: 从无缘塚采下的花。靠近它时思绪会变得模糊。
+
+- id: old_music_box
+  name: 旧音乐盒
+  description: 不知何时被遗落在山上的音乐盒。曲调很旧。

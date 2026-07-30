@@ -1,0 +1,42 @@
+- id: hakurei_shrine
+  name: 博丽神社
+  description: 幻想乡东端的神社。赛钱箱常年空着。
+  exits: [human_village, youkai_mountain]
+
+- id: human_village
+  name: 人间之里
+  description: 人类聚居的村落。白天热闹。
+  exits: [hakurei_shrine, kirisame_magic_shop, muenzuka]
+
+- id: kirisame_magic_shop
+  name: 雾雨魔法店
+  description: 堆满蘑菇和魔法书的小屋，几乎无处落脚。
+  exits: [human_village, forest_of_magic]
+  items:
+    rare_book: 1
+
+- id: forest_of_magic
+  name: 魔法森林
+  description: 瘴气弥漫，蘑菇丛生。
+  exits: [kirisame_magic_shop, scarlet_devil_basement]
+  items:
+    magic_mushroom: 2
+
+- id: scarlet_devil_basement
+  name: 红魔馆地下室
+  description: 阴冷的地下迷宫。深处传来笑声。
+  exits: [forest_of_magic]
+
+- id: muenzuka
+  name: 无缘塚
+  description: 无人祭扫的墓地。此刻开满了不该在这个季节盛开的花。
+  exits: [human_village]
+  items:
+    withered_flower: 1
+
+- id: youkai_mountain
+  name: 妖怪之山
+  description: 妖怪的领地，人类很少踏入。
+  exits: [hakurei_shrine]
+  items:
+    old_music_box: 1
