@@ -69,6 +69,12 @@ def render_ending(view: PlayerView) -> str:
     return f"\n════ {view.ending_title} ════\n\n{view.ending_text}\n"
 
 
+def _stream_out(chunk: str) -> None:
+    """NPC 台词逐块落屏。本地 8B 模型一整回合要十几秒，攒齐再打
+    等于让玩家对着空屏幕等——首字必须尽早出现。"""
+    print(chunk, end="", flush=True)
+
+
 SAVE_DIR = REPO_ROOT / "saves"
 
 
@@ -145,7 +151,9 @@ def main() -> None:
             continue
 
         try:
-            turns = session.say(raw)
+            print()
+            turns = session.say(raw, on_chunk=_stream_out)
+            print()
         except Exception as exc:  # noqa: BLE001
             print(f"\n（模型没有回应：{exc}）")
             print("（检查 GENSOKYO_BASE_URL 指向的端点是否在运行。）")
@@ -153,7 +161,7 @@ def main() -> None:
         if not turns:
             print("（这里没有人回应。）")
         for turn in turns:
-            print(f"\n{turn.utterance}")
+            # utterance 已经逐字流到屏幕上了，不再重复打印。
             for result in turn.tool_results:
                 mark = "✓" if result.ok else "✗"
                 detail = result.observation_delta if result.ok else result.error
