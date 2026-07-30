@@ -39,8 +39,10 @@ def apply_emotion_decay(npc: NpcState, card: CharacterCard) -> None:
 
 
 def can_reveal(npc: NpcState, cond: RevealConditions) -> bool:
+    """多个门槛之间是「与」关系，全部满足才能说出口；
+    `traded_item_in` 内部是「或」，收到其中任一样即算达成。"""
     if cond.attitude_gte is not None and npc.attitude < cond.attitude_gte:
         return False
-    if cond.traded_item_in and not (npc.received_items & set(cond.traded_item_in)):
-        return False
+    if cond.traded_item_in:
+        return bool(npc.received_items & set(cond.traded_item_in))
     return True
