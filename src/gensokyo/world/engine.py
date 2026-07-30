@@ -6,6 +6,7 @@ from pydantic import BaseModel, ValidationError
 from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
+from gensokyo.world.observation import FactContext, NpcPanel, Observation, PlayerView
 from gensokyo.world.quest import compute_stage
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
@@ -353,3 +354,89 @@ class WorldEngine:
             {"tool": "break_item", "item": args.item},
         )
         return ActionResult.succeeded([ev], f"{self._item_name(args.item)}被弄坏了。")
+
+    # ---------- 观测视图 ----------
+
+    OUTSIDE_BLIND = "outside_basement_events"
+
+    def observe(self, npc_id: NpcId) -> Observation:
+        card = self.defs.characters[npc_id]
+        npc = self.state.npcs[npc_id]
+        loc = self.defs.locations[npc.location]
+
+        hint = ""
+        for mode in card.emotion.modes:
+            if mode.name == npc.mode:
+                hint = mode.speech_hint
+
+        facts: list[FactContext] = []
+        for fact_id in sorted(npc.holds_facts):
+            fact = self.defs.facts[fact_id]
+            gate = fact.reveal_conditions
+            parts: list[str] = []
+            if gate.attitude_gte is not None:
+                parts.append(f"对方好感需达到 {gate.attitude_gte}（当前 {npc.attitude}）")
+            if gate.traded_item_in:
+                parts.append("对方需先给你其中一样东西：" + "、".join(gate.traded_item_in))
+            facts.append(
+                FactContext(
+                    fact_id=fact_id,
+                    content=fact.content,
+                    can_reveal_now=can_reveal(npc, gate),
+                    already_revealed=fact_id in npc.revealed_facts,
+                    gate_hint="；".join(parts) if parts else "无条件",
+                )
+            )
+
+        blind = self.OUTSIDE_BLIND in card.knowledge.forbidden_knowledge
+
+        return Observation(
+            tick=self.state.tick,
+            npc_id=npc_id,
+            npc_name=card.name,
+            location_id=npc.location,
+            location_name=loc.name,
+            location_description=loc.description,
+            player_is_here=self.state.player.location == npc.location,
+            attitude=npc.attitude,
+            emotion_var=npc.emotion_var,
+            emotion=npc.emotion,
+            mode=npc.mode,
+            mode_speech_hint=hint,
+            own_inventory=dict(npc.inventory),
+            items_here=dict(self.state.locations[npc.location].items),
+            others_here=[
+                self.defs.characters[other].name
+                for other in sorted(self.state.npcs)
+                if other != npc_id and self.state.npcs[other].location == npc.location
+            ],
+            facts=facts,
+            quest_stage=None if blind else self.state.quest.stage.name,
+        )
+
+    def observe_player(self) -> PlayerView:
+        loc_id = self.state.player.location
+        loc = self.defs.locations[loc_id]
+
+        return PlayerView(
+            tick=self.state.tick,
+            location_id=loc_id,
+            location_name=loc.name,
+            location_description=loc.description,
+            exits=[self.defs.locations[e].name for e in loc.exits],
+            inventory=dict(self.state.player.inventory),
+            items_here=dict(self.state.locations[loc_id].items),
+            known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
+            quest_stage=self.state.quest.stage.name,
+            npcs_here=[
+                NpcPanel(
+                    npc_id=nid,
+                    name=self.defs.characters[nid].name,
+                    attitude=self.state.npcs[nid].attitude,
+                    emotion_var=self.state.npcs[nid].emotion_var,
+                    emotion=self.state.npcs[nid].emotion,
+                    mode=self.state.npcs[nid].mode,
+                )
+                for nid in self._npcs_here()
+            ],
+        )
