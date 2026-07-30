@@ -95,6 +95,45 @@ def test_retry_is_capped_at_two_decide_calls() -> None:
     assert turn.utterance == "……哼。"
 
 
+def test_tool_calls_and_results_stay_aligned_across_a_retry() -> None:
+    """自愈回合：第一次 reveal_info 被门槛拒了，第二次改成开口要东西。
+
+    tool_calls 若只留最后一次决策，这个回合就会变成「1 个调用、2 个结果」，
+    按下标配对的指标会把 take_item 配到 reveal_info 的失败上——自愈率于是
+    永远算不对，而这是它唯一发生的地方。
+    """
+    agent, eng = _agent(
+        [
+            _decide([{"tool": "reveal_info", "args": {"fact": "barrier_anomaly_time"}}]),
+            _decide([{"tool": "take_item", "args": {"item": "offering_coin"}}]),
+            "先往赛钱箱里放点东西。",
+        ]
+    )
+    eng.state.player.inventory[ItemId("offering_coin")] = 1
+
+    turn = agent.act("结界最近有异常吗")
+
+    assert [c.tool for c in turn.tool_calls] == ["reveal_info", "take_item"]
+    assert [r.ok for r in turn.tool_results] == [False, True]
+    assert len(turn.tool_calls) == len(turn.tool_results)
+
+
+def test_hallucinated_say_never_enters_tool_calls() -> None:
+    """决策阶段的 say 被丢弃、不下发引擎，所以也不该在 tool_calls 里
+    留下一条没有对应结果的记录——那会让两个列表错位。"""
+    agent, _ = _agent(
+        [
+            _decide([{"tool": "say", "args": {"text": "这句不该出现"}}]),
+            "玩家看到的只有这句。",
+        ]
+    )
+
+    turn = agent.act("喂")
+
+    assert turn.tool_calls == []
+    assert turn.tool_results == []
+
+
 def test_unparseable_decision_falls_back_without_crashing() -> None:
     agent, _ = _agent(["我不知道该怎么回答", _decide(), "……哼。"])
 

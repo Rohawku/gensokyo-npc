@@ -25,7 +25,8 @@ class TurnRecord(BaseModel):
     utterance: str = ""
     thought: str = ""
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
-    """{"tool":..., "args":...}"""
+    """{"tool":..., "args":...}，本回合实际下发的每一次调用（含重试时
+    失败的那次），与 tool_results 等长同序。指标靠下标把调用和结果配对。"""
     tool_results: list[dict[str, Any]] = Field(default_factory=list)
     """{"ok":..., "error_code":..., "observation":...}"""
     llm_calls: int = 0

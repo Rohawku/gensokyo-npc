@@ -15,6 +15,9 @@ class NpcTurn(BaseModel):
     thought: str
     utterance: str
     tool_calls: list[Action] = Field(default_factory=list)
+    """本回合实际下发给引擎的调用，含重试时那次失败的，与 tool_results
+    严格等长同序。刻意不是「最后一次决策说要做什么」——那个版本会在自愈
+    回合里丢掉失败的那一次，让任何按下标配对的指标把成功配到失败上。"""
 
     # 以下为可观测性字段，不参与玩法，供调试面板使用。
     # 没有它们，一次糟糕的回复无法归因到检索还是生成。

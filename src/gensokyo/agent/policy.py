@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from gensokyo.agent.prompt import build_decide_messages, build_speak_messages
 from gensokyo.agent.schema import Decision, NpcTurn, TurnParseError, parse_decision
@@ -27,16 +28,33 @@ def _describe(action: Action, result: ActionResult) -> str:
     return f"{action.tool}：做到了。"
 
 
+@dataclass
+class _Decided:
+    """决策阶段的产出。
+
+    `issued` 与 `results` 严格等长且同序——重试时两者一起追加。曾经
+    `tool_calls` 只取最后一次决策、`results` 却跨重试累积，于是恰好在
+    「第一次失败、第二次改招成功」这个回合里两者错位，而那正是失败自愈
+    唯一发生的地方：任何按下标配对的指标都会把成功的调用配到失败的结果上。
+    """
+
+    decision: Decision | None
+    issued: list[Action]
+    results: list[ActionResult]
+    outcomes: list[str]
+    llm_calls: int
+
+
 def _decide(
     card: CharacterCard,
     engine: WorldEngine,
     llm: LlmClient,
     history: list[str],
     npc_id: NpcId,
-) -> tuple[Decision | None, list[ActionResult], list[str], int]:
-    """阶段一：想什么、做什么。返回决策、工具结果、给说话阶段看的
-    结果描述，以及消耗的 LLM 调用次数。"""
+) -> _Decided:
+    """阶段一：想什么、做什么。"""
     errors: list[str] = []
+    issued: list[Action] = []
     results: list[ActionResult] = []
     outcomes: list[str] = []
     decision: Decision | None = None
@@ -69,6 +87,7 @@ def _decide(
                 continue
             action = Action(actor=str(card.id), tool=call.tool, args=call.args)
             result = engine.apply(action)
+            issued.append(action)
             results.append(result)
             outcomes.append(_describe(action, result))
             if not result.ok:
@@ -78,7 +97,9 @@ def _decide(
             break
         errors = step_errors
 
-    return decision, results, outcomes, calls
+    return _Decided(
+        decision=decision, issued=issued, results=results, outcomes=outcomes, llm_calls=calls
+    )
 
 
 def _speak(
@@ -128,7 +149,7 @@ def run_turn(
     started = time.monotonic()
     mode_before = engine.state.npcs[npc_id].mode
 
-    decision, results, outcomes, calls = _decide(card, engine, llm, history, npc_id)
+    decided = _decide(card, engine, llm, history, npc_id)
 
     utterance = _speak(
         card,
@@ -136,20 +157,20 @@ def run_turn(
         llm,
         history,
         npc_id,
-        decision.thought if decision is not None else "",
-        outcomes,
+        decided.decision.thought if decided.decision is not None else "",
+        decided.outcomes,
         on_chunk,
     )
-    calls += 1
+    calls = decided.llm_calls + 1
 
     engine.apply(Action(actor=str(card.id), tool="say", args={"text": utterance}))
 
     turn = NpcTurn(
-        thought=decision.thought if decision is not None else "",
+        thought=decided.decision.thought if decided.decision is not None else "",
         utterance=utterance,
-        tool_calls=decision.tool_calls if decision is not None else [],
+        tool_calls=decided.issued,
     )
-    turn.tool_results = results
+    turn.tool_results = decided.results
     turn.llm_calls = calls
     turn.mode_before = mode_before
     turn.mode_after = engine.state.npcs[npc_id].mode
