@@ -262,6 +262,12 @@ class WorldEngine:
                 "现在还不想告诉对方这件事——对方还没让你觉得值得说。",
             )
 
+        if args.fact in npc.revealed_facts:
+            # 已经说过了。不算失败——把它当失败会给策略层一个语义错乱的
+            # 「你说不出来」。但不再产生事件，否则重复揭示会用同质条目
+            # 灌满 event_log，挤占后续 prompt 的近期事件窗口。
+            return ActionResult.succeeded([], f"这件事你已经告诉过对方了：{fact.content}")
+
         self.state.player.known_facts.add(args.fact)
         npc.revealed_facts.add(args.fact)
         ev = self._emit(

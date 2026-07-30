@@ -70,3 +70,35 @@ def test_reveal_carries_fact_content_in_observation() -> None:
     result = eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER}))
 
     assert "结界" in result.observation_delta
+
+
+def test_repeated_reveal_does_not_flood_event_log() -> None:
+    """重复揭示不算失败（把它当失败会给策略层语义错乱的信号），
+    但不再产生事件，否则同质条目会挤占 prompt 的近期事件窗口。"""
+    eng = _engine()
+    bump_attitude(eng.state.npcs[NpcId("reimu")], 24)
+
+    first = eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER}))
+    log_after_first = len(eng.state.event_log)
+    second = eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER}))
+
+    assert first.ok is True
+    assert second.ok is True
+    assert second.events == []
+    assert len(eng.state.event_log) == log_after_first
+    assert "已经告诉过" in second.observation_delta
+
+
+def test_four_gifts_exactly_unlock_reimus_clue() -> None:
+    """锁住游戏可通关性：灵梦的门槛必须能被初始赛钱打开。
+    门槛与 ATTITUDE_DELTA 的比例一旦改动，这个测试会立刻报警。"""
+    eng = _engine()
+
+    for _ in range(4):
+        assert (
+            eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"})).ok
+            is True
+        )
+
+    assert eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER})).ok is True
+    assert BARRIER in eng.state.player.known_facts
