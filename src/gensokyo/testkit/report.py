@@ -53,6 +53,24 @@ LIMITATIONS = """\
 不适合报绝对值。"""
 
 
+class PersonaSlice(BaseModel):
+    """单一人格的切片。
+
+    聚合数字在两个方向上都会骗人：越狱和反复无常玩家根本不是来通关的，
+    把它们算进分母会把真实玩法的通关率从 100% 压到 33%；反过来它们持续
+    施压产生的复读会把复读率从 0% 抬到 43%。**这两个数都必须按人格看。**
+    """
+
+    episodes: int
+    completed: int
+    utterances: int
+    tool_calls: int
+    repetition_rate: float
+    jailbreak_success_rate: float | None
+    """只有越狱人格有意义，其他人格为 None——0.0 会被读成「守住了」，
+    而实际是「没人试过」。"""
+
+
 class EvalReport(BaseModel):
     episodes: int
     personas: dict[str, int]
@@ -71,6 +89,8 @@ class EvalReport(BaseModel):
     keyword_libraries: dict[str, int] = Field(default_factory=dict)
     """各关键词库的条数，充当「词库版本」。只报比率不报词库规模的话，
     下一次有人加三个词，历史数字就悄悄不可比了。"""
+    by_persona: dict[str, PersonaSlice] = Field(default_factory=dict)
+    """按人格切片。聚合数字会被对抗性人格污染，见 PersonaSlice 的说明。"""
     denominators: dict[str, int] = Field(default_factory=dict)
     """各比率的分母。一个 1.00 的自愈率，分母是 1 还是 40，说服力差一个
     量级；一个没有分母的比率不该被引用。"""
@@ -135,7 +155,29 @@ def _hard_section(report: EvalReport) -> list[str]:
     )
 
     lines = [
-        "## 一、硬指标",
+        "## 〇、按人格切片（先看这张表）",
+        "",
+        "**聚合数字在两个方向上都会骗人。** 越狱和反复无常玩家不是来通关的，",
+        "把它们算进分母会把真实玩法的通关率压低；反过来它们持续施压产生的复读",
+        "会把复读率抬高。所以任何跨人格的聚合值都只能当粗略参考。",
+        "",
+        "| 人格 | 局数 | 通关 | 台词 | 工具调用 | 复读率 | 越狱成功率 |",
+        "|---|---|---|---|---|---|---|",
+        *(
+            f"| {name} | {sl.episodes} | {sl.completed}/{sl.episodes} | {sl.utterances} | "
+            f"{sl.tool_calls} | {sl.repetition_rate:.1%} | "
+            + (
+                f"{sl.jailbreak_success_rate:.1%}"
+                if sl.jailbreak_success_rate is not None
+                else "—（未施压）"
+            )
+            + " |"
+            for name, sl in report.by_persona.items()
+        ),
+        "",
+        "---",
+        "",
+        "## 一、硬指标（跨人格聚合）",
         "",
         "判据是 `ending` / `known_fact_ids` / `ErrorCode` 枚举 / 角色卡数据，",
         "没有一处交给模型判断。同一批轨迹重算必得同一组数。",
@@ -284,6 +326,29 @@ def _distribution(weights: dict[str, float]) -> str:
     return "、".join(f"{tool} {value:.2f}" for tool, value in ordered)
 
 
+def _slice_by_persona(
+    trajectories: Sequence[Trajectory], defs: WorldDefs
+) -> dict[str, PersonaSlice]:
+    groups: dict[str, list[Trajectory]] = {}
+    for traj in trajectories:
+        groups.setdefault(traj.persona, []).append(traj)
+
+    out: dict[str, PersonaSlice] = {}
+    for name, group in sorted(groups.items()):
+        task = task_metrics(group, defs)
+        persona = persona_metrics(group, defs)
+        safety = safety_metrics(group, defs)
+        out[name] = PersonaSlice(
+            episodes=len(group),
+            completed=round(task.completion_rate * len(group)),
+            utterances=persona.utterances,
+            tool_calls=sum(len(t.tool_calls) for traj in group for t in traj.turns),
+            repetition_rate=persona.repetition_rate,
+            jailbreak_success_rate=(safety.jailbreak_success_rate if name == "jailbreak" else None),
+        )
+    return out
+
+
 def evaluate(trajectories: Sequence[Trajectory], defs: WorldDefs) -> EvalReport:
     personas: dict[str, int] = {}
     for traj in trajectories:
@@ -303,6 +368,7 @@ def evaluate(trajectories: Sequence[Trajectory], defs: WorldDefs) -> EvalReport:
     return EvalReport(
         episodes=len(trajectories),
         personas=personas,
+        by_persona=_slice_by_persona(trajectories, defs),
         task=task_metrics(trajectories, defs),
         tools=tool_metrics(trajectories),
         safety=safety_metrics(trajectories, defs),
