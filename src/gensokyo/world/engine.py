@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -15,6 +16,8 @@ from gensokyo.world.tools import (
     SayArgs,
     parse_args,
 )
+
+ToolHandler = Callable[[Action, BaseModel], ActionResult]
 
 
 class WorldEngine:
@@ -79,7 +82,7 @@ class WorldEngine:
             return ActionResult.failed(ErrorCode.UNKNOWN_TOOL, f"动作 {action.tool} 尚未实现。")
         return handler(action, args)
 
-    def _handlers(self) -> dict[str, Any]:
+    def _handlers(self) -> dict[str, ToolHandler]:
         return {"say": self._do_say}
 
     # ---------- 各工具实现 ----------
