@@ -12,6 +12,7 @@ from gensokyo.world.rules import (
     apply_emotion_decay,
     bump_attitude,
     bump_emotion,
+    can_reveal,
 )
 from gensokyo.world.state import WorldState
 from gensokyo.world.tools import (
@@ -21,6 +22,7 @@ from gensokyo.world.tools import (
     ErrorCode,
     GiveItemArgs,
     MoveArgs,
+    RevealInfoArgs,
     SayArgs,
     TakeItemArgs,
     ToolSpec,
@@ -131,6 +133,7 @@ class WorldEngine:
             "move": self._do_move,
             "give_item": self._do_give_item,
             "take_item": self._do_take_item,
+            "reveal_info": self._do_reveal_info,
         }
 
     # ---------- 各工具实现 ----------
@@ -242,3 +245,28 @@ class WorldEngine:
     def _item_name(self, item: ItemId) -> str:
         known = self.defs.items.get(item)
         return known.name if known else str(item)
+
+    def _do_reveal_info(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, RevealInfoArgs)
+        if action.actor == "player":
+            return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
+
+        npc_id = NpcId(action.actor)
+        npc = self.state.npcs[npc_id]
+        fact = self.defs.facts.get(args.fact)
+        if fact is None or args.fact not in npc.holds_facts:
+            return ActionResult.failed(ErrorCode.NOT_FACT_HOLDER, "你并不知道这件事，说不出来。")
+        if not can_reveal(npc, fact.reveal_conditions):
+            return ActionResult.failed(
+                ErrorCode.REVEAL_CONDITION_UNMET,
+                "现在还不想告诉对方这件事——对方还没让你觉得值得说。",
+            )
+
+        self.state.player.known_facts.add(args.fact)
+        npc.revealed_facts.add(args.fact)
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "reveal_info", "fact": args.fact},
+        )
+        return ActionResult.succeeded([ev], fact.content)
