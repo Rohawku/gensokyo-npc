@@ -18,7 +18,14 @@ class NpcAgent:
         self.history: list[str] = []
 
     def act(self, player_utterance: str) -> NpcTurn:
-        self.history.append(f"玩家：{player_utterance}")
-        turn = run_turn(self.card, self.engine, self.llm, self.history[-HISTORY_WINDOW:])
+        # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
+        # 写入过的玩家发言会变成一条没人回应的孤立记录，模型恢复后
+        # 看到的对话历史就是错的。两行一起提交，或都不提交。
+        said = f"玩家：{player_utterance}"
+        window = (self.history + [said])[-HISTORY_WINDOW:]
+
+        turn = run_turn(self.card, self.engine, self.llm, window)
+
+        self.history.append(said)
         self.history.append(f"{self.card.name}：{turn.utterance}")
         return turn

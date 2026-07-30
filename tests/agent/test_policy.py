@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from gensokyo.agent.npc import NpcAgent
-from gensokyo.llm.client import ScriptedLlmClient
+from gensokyo.llm.client import LlmError, ScriptedLlmClient
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import FactId, ItemId, NpcId
 from gensokyo.world.loader import load_defs
@@ -122,3 +124,34 @@ def test_denied_tool_error_reaches_the_model() -> None:
     assert turn.tool_results[0].error_code is ErrorCode.TOOL_DENIED
     assert "禁足" in agent.llm.calls[1][-1].content  # type: ignore[attr-defined]
     assert turn.utterance == "……你帮我去看看吧。"
+
+
+def test_llm_failure_leaves_no_orphan_line_in_history() -> None:
+    """端点超时/限流时 run_turn 会抛异常。若玩家发言已写进 history，
+    就会留下一条没人回应的孤立记录，模型恢复后看到的对话是错的。"""
+    agent, _ = _agent([])  # 预设回复为空，complete 会抛 LlmError
+
+    with pytest.raises(LlmError):
+        agent.act("喂")
+
+    assert agent.history == []
+
+
+def test_empty_utterance_is_retried_then_falls_back() -> None:
+    """空 utterance 会 emit 一条空文本事件——日志正常，玩家屏幕空白。"""
+    agent, eng = _agent([_reply(""), _reply("……哼。")])
+
+    turn = agent.act("喂")
+
+    assert turn.llm_calls == 2
+    assert turn.utterance == "……哼。"
+    assert eng.state.event_log[-1].payload["text"] == "……哼。"
+
+
+def test_persistently_empty_utterance_falls_back_but_still_speaks() -> None:
+    agent, eng = _agent([_reply(""), _reply("   ")])
+
+    turn = agent.act("喂")
+
+    assert turn.utterance == "……"
+    assert eng.state.event_log[-1].payload["text"] == "……"

@@ -92,7 +92,7 @@ def parse_npc_turn(raw: str, actor: str = "") -> NpcTurn:
         )
 
     try:
-        return NpcTurn(
+        turn = NpcTurn(
             thought=str(data.get("thought", "")),
             utterance=data["utterance"],
             tool_calls=calls,
@@ -101,3 +101,9 @@ def parse_npc_turn(raw: str, actor: str = "") -> NpcTurn:
         raise TurnParseError("回复缺少 utterance 字段") from exc
     except ValidationError as exc:
         raise TurnParseError(f"字段校验失败：{exc}") from exc
+
+    if not turn.utterance.strip():
+        # 空 utterance 会 emit 一条空文本事件：玩家屏幕上什么都没有，
+        # 但日志里看起来一切正常。当作解析失败，让策略层重试一次。
+        raise TurnParseError("utterance 是空的，NPC 必须说出一句话")
+    return turn
