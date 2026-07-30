@@ -1,0 +1,96 @@
+from pathlib import Path
+
+from gensokyo.llm.client import OpenAiCompatibleClient
+from gensokyo.session.loop import Session
+from gensokyo.world.observation import PlayerView
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+HELP = """指令：
+  /go <地点>     移动
+  /give <物品>   把物品交给在场的人
+  /pick <物品>   捡起地上的东西
+  /look          查看当前状态
+  /help          显示这段说明
+  /quit          退出
+直接输入文字则是对在场的人说话。
+"""
+
+
+def render(view: PlayerView) -> str:
+    lines = [
+        f"── 第 {view.tick} 回合 · {view.location_name} ──",
+        view.location_description,
+        f"出口：{'、'.join(view.exits)}",
+    ]
+    if view.items_here:
+        lines.append("地上：" + "、".join(f"{k}×{v}" for k, v in view.items_here.items()))
+    if view.inventory:
+        lines.append("身上：" + "、".join(f"{k}×{v}" for k, v in view.inventory.items()))
+    for npc in view.npcs_here:
+        lines.append(
+            f"在场：{npc.name}（好感 {npc.attitude}，"
+            f"{npc.emotion_var} {npc.emotion:.2f}，{npc.mode}）"
+        )
+    lines.append(f"进展：{view.quest_stage}")
+    if view.known_facts:
+        lines.append("已知线索：")
+        lines += [f"  · {f}" for f in view.known_facts]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    session = Session.create(
+        scenario_dir=REPO_ROOT / "scenario",
+        characters_dir=REPO_ROOT / "characters",
+        llm=OpenAiCompatibleClient(),
+    )
+    print("東方忘却抄 ~ Oblivion Chronicle\n")
+    print(HELP)
+    print(render(session.view()))
+
+    while True:
+        try:
+            raw = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not raw:
+            continue
+        if raw == "/quit":
+            break
+        if raw == "/help":
+            print(HELP)
+            continue
+        if raw == "/look":
+            print(render(session.view()))
+            continue
+        if raw.startswith("/go "):
+            print(render(session.go(raw[4:].strip())))
+            continue
+        if raw.startswith("/give "):
+            print(render(session.give(raw[6:].strip())))
+            continue
+        if raw.startswith("/pick "):
+            print(render(session.pick(raw[6:].strip())))
+            continue
+
+        try:
+            turns = session.say(raw)
+        except Exception as exc:  # noqa: BLE001
+            print(f"\n（模型没有回应：{exc}）")
+            print("（检查 GENSOKYO_BASE_URL 指向的端点是否在运行。）")
+            continue
+        if not turns:
+            print("（这里没有人回应。）")
+        for turn in turns:
+            print(f"\n{turn.utterance}")
+            for result in turn.tool_results:
+                mark = "✓" if result.ok else "✗"
+                detail = result.observation_delta if result.ok else result.error
+                print(f"  {mark} {detail}")
+        print()
+        print(render(session.view()))
+
+
+if __name__ == "__main__":
+    main()
