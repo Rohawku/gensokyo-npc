@@ -377,7 +377,10 @@ class WorldEngine:
             if gate.attitude_gte is not None:
                 parts.append(f"对方好感需达到 {gate.attitude_gte}（当前 {npc.attitude}）")
             if gate.traded_item_in:
-                parts.append("对方需先给你其中一样东西：" + "、".join(gate.traded_item_in))
+                # gate_hint 会原样进 prompt，必须用中文物品名——
+                # 否则 NPC 会在对话里说出 rare_book 这种 id。
+                names = "、".join(self._item_name(i) for i in gate.traded_item_in)
+                parts.append(f"对方需先给你其中一样东西：{names}")
             facts.append(
                 FactContext(
                     fact_id=fact_id,

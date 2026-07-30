@@ -91,3 +91,16 @@ def test_player_view_includes_npc_attitude_panel() -> None:
     assert panel.name == "博丽灵梦"
     assert panel.attitude == 0
     assert panel.emotion_var == "annoyance"
+
+
+def test_gate_hint_uses_chinese_item_names() -> None:
+    """gate_hint 会原样进 prompt。渲染成 rare_book 这类 id 会让
+    魔理沙在对话里说出英文 id，破坏角色扮演。"""
+    eng = _engine()
+
+    hint = eng.observe(NpcId("marisa")).facts[0].gate_hint
+
+    assert "珍稀魔法书" in hint
+    assert "魔法蘑菇" in hint
+    assert "rare_book" not in hint
+    assert "magic_mushroom" not in hint
