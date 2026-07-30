@@ -26,7 +26,10 @@ class ScriptedLlmClient:
         self.calls: list[list[Msg]] = []
 
     def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
-        self.calls.append(messages)
+        # 存快照而非引用。策略层若复用同一个 messages 列表就地追加，
+        # 存引用会让所有 calls[i] 指向同一对象——「第二次调用的 prompt
+        # 里含回灌的错误原因」这类断言就会空洞通过。
+        self.calls.append(list(messages))
         if not self._replies:
             raise LlmError("脚本化客户端的预设回复已用尽")
         return self._replies.pop(0)
