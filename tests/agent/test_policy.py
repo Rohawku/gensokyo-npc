@@ -8,6 +8,7 @@ from gensokyo.llm.client import LlmError, ScriptedLlmClient
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import FactId, ItemId, NpcId
 from gensokyo.world.loader import load_defs
+from gensokyo.world.rules import bump_emotion
 from gensokyo.world.state import build_initial_state
 from gensokyo.world.tools import ErrorCode
 
@@ -100,13 +101,30 @@ def test_unparseable_reply_falls_back_without_crashing() -> None:
 
 
 def test_mode_transition_is_recorded() -> None:
+    """把芙兰的兴奋度推过 0.7 再开口，mode_before 必须是 destructive。
+    原先只断言 mode_after in {calm, destructive}——那覆盖了全部取值，
+    永远不可能失败。"""
+    agent, eng = _agent([_reply("好玩好玩！")], npc="flandre")
+    eng.state.player.location = eng.state.npcs[NpcId("flandre")].location
+    flandre = eng.state.npcs[NpcId("flandre")]
+    bump_emotion(flandre, eng.defs.characters[NpcId("flandre")], +0.6)
+    assert flandre.emotion == pytest.approx(0.8)
+
+    turn = agent.act("我带了个音乐盒给你")
+
+    assert turn.mode_before == "destructive"
+
+
+def test_calm_flandre_stays_calm_across_a_turn() -> None:
+    """与上一个测试配对：不推情绪时两端都必须是 calm。
+    两个测试要能互相区分，否则「记录了模式」这件事没有被真的测到。"""
     agent, eng = _agent([_reply("好玩好玩！")], npc="flandre")
     eng.state.player.location = eng.state.npcs[NpcId("flandre")].location
 
     turn = agent.act("我带了个音乐盒给你")
 
     assert turn.mode_before == "calm"
-    assert turn.mode_after in {"calm", "destructive"}
+    assert turn.mode_after == "calm"
 
 
 def test_denied_tool_error_reaches_the_model() -> None:
