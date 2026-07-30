@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from gensokyo.world.defs import WorldDefs
+from gensokyo.world.defs import StageDef, WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
 from gensokyo.world.observation import FactContext, NpcPanel, Observation, PlayerView
@@ -12,7 +12,6 @@ from gensokyo.world.quest import (
     ANOMALY_SITE,
     OBLIVION_THRESHOLD,
     OBLIVION_WARNING,
-    STAGE_HINT,
     TIMEOUT_ENDING,
     compute_stage,
 )
@@ -520,8 +519,11 @@ class WorldEngine:
                 if other != npc_id and self.state.npcs[other].location == npc.location
             ],
             facts=facts,
-            quest_hint=None if blind else STAGE_HINT[self.state.quest.stage],
+            quest_hint=None if blind else self._stage().hint,
         )
+
+    def _stage(self) -> StageDef:
+        return self.defs.stages[self.state.quest.stage.name]
 
     def _oblivion_warning(self) -> str:
         left = OBLIVION_THRESHOLD - self.state.player.oblivion_exposure
@@ -545,7 +547,8 @@ class WorldEngine:
             items_here=self._named(self.state.locations[loc_id].items),
             known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
             quest_stage=self.state.quest.stage.name,
-            quest_hint=STAGE_HINT[self.state.quest.stage],
+            quest_hint=self._stage().hint,
+            objective=self._stage().objective,
             oblivion_warning=self._oblivion_warning(),
             ending_title=ending.title if ending else "",
             ending_text=ending.text.strip() if ending else "",

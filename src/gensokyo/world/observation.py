@@ -65,6 +65,8 @@ class PlayerView(BaseModel):
     quest_stage: str = ""
     """阶段枚举名，供调试与测试。玩家可见的文本用 quest_hint。"""
     quest_hint: str = ""
+    objective: str = ""
+    """当前该干什么。玩家不该靠猜。"""
     oblivion_warning: str = ""
     """记忆开始流失的提示。空串表示暂时安全。"""
     ending_title: str = ""

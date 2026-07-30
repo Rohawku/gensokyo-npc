@@ -55,6 +55,8 @@ def render(view: PlayerView) -> str:
         if npc.mode_hint:
             lines.append(f"      {npc.mode_hint}")
     lines.append(f"进展：{view.quest_hint}")
+    if view.objective:
+        lines.append(f"目标：{view.objective}")
     if view.oblivion_warning:
         lines.append(f"⚠ {view.oblivion_warning}")
     if view.known_facts:
@@ -93,7 +95,12 @@ def main() -> None:
         characters_dir=REPO_ROOT / "characters",
         llm=OpenAiCompatibleClient(),
     )
-    print("東方忘却抄 ~ Oblivion Chronicle\n")
+    prologue = session.engine.defs.prologue
+    print(f"\n════ {prologue.title} ════\n")
+    print(prologue.text.strip())
+    if prologue.objective_hint:
+        print(f"\n{prologue.objective_hint.strip()}")
+    print(f"\n{'─' * 44}\n")
     print(HELP)
     print(render(session.view()))
 

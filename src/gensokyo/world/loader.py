@@ -10,6 +10,8 @@ from gensokyo.world.defs import (
     FactDef,
     ItemDef,
     LocationDef,
+    PrologueDef,
+    StageDef,
     WorldDefs,
 )
 
@@ -54,6 +56,8 @@ def load_defs(scenario_dir: Path, characters_dir: Path) -> WorldDefs:
     items = [ItemDef.model_validate(d) for d in _read_list(scenario_dir / "items.yaml")]
     facts = [FactDef.model_validate(d) for d in _read_list(scenario_dir / "facts.yaml")]
     endings = [EndingDef.model_validate(d) for d in _read_list(scenario_dir / "endings.yaml")]
+    stages = [StageDef.model_validate(d) for d in _read_list(scenario_dir / "stages.yaml")]
+    prologue = PrologueDef.model_validate(_read_mapping(scenario_dir / "prologue.yaml"))
 
     cards: list[CharacterCard] = []
     for card_path in sorted(characters_dir.glob("*.yaml")):
@@ -65,4 +69,6 @@ def load_defs(scenario_dir: Path, characters_dir: Path) -> WorldDefs:
         facts=_index(facts, "事实"),
         characters=_index(cards, "角色"),
         endings=_index(endings, "结局"),
+        stages=_index(stages, "阶段"),
+        prologue=prologue,
     )

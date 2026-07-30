@@ -104,6 +104,20 @@ class FactDef(StrictModel):
     is_clue: bool = False
 
 
+class PrologueDef(StrictModel):
+    title: str
+    text: str
+    objective_hint: str = ""
+
+
+class StageDef(StrictModel):
+    id: str
+    hint: str
+    """给 NPC 看的进展说法，进 prompt。"""
+    objective: str
+    """给玩家看的当前目标。开局只给指令表、不说要干什么，玩家会一脸茫然。"""
+
+
 class EndingDef(StrictModel):
     id: str
     by: NpcId | None = None
@@ -132,6 +146,8 @@ class WorldDefs(StrictModel):
     facts: dict[FactId, FactDef]
     characters: dict[NpcId, CharacterCard]
     endings: dict[str, EndingDef]
+    stages: dict[str, StageDef]
+    prologue: PrologueDef
 
     def ending_by(self, npc_id: NpcId) -> EndingDef | None:
         for ending in self.endings.values():
