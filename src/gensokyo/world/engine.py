@@ -19,6 +19,8 @@ from gensokyo.world.tools import (
     TOOL_REGISTRY,
     Action,
     ActionResult,
+    AskPlayerArgs,
+    BreakItemArgs,
     ErrorCode,
     GiveItemArgs,
     MoveArgs,
@@ -26,6 +28,7 @@ from gensokyo.world.tools import (
     SayArgs,
     TakeItemArgs,
     ToolSpec,
+    UseSpellcardArgs,
     parse_args,
 )
 
@@ -134,6 +137,9 @@ class WorldEngine:
             "give_item": self._do_give_item,
             "take_item": self._do_take_item,
             "reveal_info": self._do_reveal_info,
+            "ask_player": self._do_ask_player,
+            "use_spellcard": self._do_use_spellcard,
+            "break_item": self._do_break_item,
         }
 
     # ---------- 各工具实现 ----------
@@ -224,7 +230,18 @@ class WorldEngine:
     def _do_take_item(self, action: Action, args: BaseModel) -> ActionResult:
         assert isinstance(args, TakeItemArgs)
         if action.actor == "player":
-            return ActionResult.failed(ErrorCode.TOOL_DENIED, "直接抢不合规矩，试着开口要。")
+            here = self.state.locations[self.state.player.location]
+            if not self._pop_items(here.items, args.item, args.count):
+                return ActionResult.failed(
+                    ErrorCode.INSUFFICIENT_ITEM, f"这里没有{self._item_name(args.item)}。"
+                )
+            self._push_items(self.state.player.inventory, args.item, args.count)
+            ev = self._emit(
+                EventKind.PLAYER_ACTION,
+                "player",
+                {"tool": "take_item", "item": args.item, "count": args.count},
+            )
+            return ActionResult.succeeded([ev], f"捡起了{self._item_name(args.item)}。")
         npc_id = NpcId(action.actor)
         npc = self.state.npcs[npc_id]
         if npc.location != self.state.player.location:
@@ -276,3 +293,36 @@ class WorldEngine:
             {"tool": "reveal_info", "fact": args.fact},
         )
         return ActionResult.succeeded([ev], fact.content)
+
+    def _do_ask_player(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, AskPlayerArgs)
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "ask_player", "question": args.question},
+        )
+        return ActionResult.succeeded([ev])
+
+    def _do_use_spellcard(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, UseSpellcardArgs)
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "use_spellcard", "name": args.name},
+        )
+        return ActionResult.succeeded([ev], f"发动了符卡「{args.name}」。")
+
+    def _do_break_item(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, BreakItemArgs)
+        npc_id = NpcId(action.actor)
+        npc = self.state.npcs[npc_id]
+        if not self._pop_items(npc.inventory, args.item, 1):
+            return ActionResult.failed(
+                ErrorCode.INSUFFICIENT_ITEM, f"你手上没有{self._item_name(args.item)}。"
+            )
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "break_item", "item": args.item},
+        )
+        return ActionResult.succeeded([ev], f"{self._item_name(args.item)}被弄坏了。")
