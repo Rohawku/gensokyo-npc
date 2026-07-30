@@ -35,6 +35,11 @@ class Observation(BaseModel):
     facts: list[FactContext] = Field(default_factory=list)
     quest_hint: str | None = None
     """剧情进展的中文说法。为 None 表示该 NPC 被信息隔离，不知道外面的事。"""
+    suggestion: str = ""
+    """引擎按当前状态算出的「现在该做什么」，只进决策阶段的 prompt。
+
+    门槛开没开、线索齐没齐，引擎是知道的，不该指望一个小模型从情报
+    清单里自己推出来——实测它只有 20~60% 的概率想到该调 reveal_info。"""
 
 
 class NpcPanel(BaseModel):

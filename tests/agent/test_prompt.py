@@ -6,6 +6,7 @@ from gensokyo.world.ids import ItemId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.rules import bump_attitude
 from gensokyo.world.state import build_initial_state
+from gensokyo.world.tools import Action
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -194,3 +195,47 @@ def test_speak_prompt_forbids_quotes_and_narration() -> None:
 
     assert "不要加引号" in user
     assert "不要输出 JSON" in user
+
+
+def test_decide_prompt_carries_the_engine_suggestion() -> None:
+    eng = _engine()
+    for _ in range(4):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_decide_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "现在该做的事" in user
+    assert "reveal_info" in user
+
+
+def test_decide_prompt_omits_the_section_when_there_is_nothing_to_suggest() -> None:
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_decide_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "现在该做的事" not in user
+
+
+def test_speak_prompt_lists_her_own_recent_lines_to_avoid_repeating() -> None:
+    """实测复读是自我强化的：她说过一次「你管的太多了」就会一直说，
+    reveal_info 命中率从 3/5 掉到 1/5。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(
+        card,
+        eng.observe(NpcId("reimu")),
+        ["玩家：喂", "博丽灵梦：你管的太多了。"],
+        "懒得管",
+        [],
+        ["你管的太多了。"],
+    )[-1].content
+
+    assert "别再重复" in user
+    assert "你管的太多了。" in user

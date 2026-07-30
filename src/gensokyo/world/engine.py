@@ -520,10 +520,55 @@ class WorldEngine:
             ],
             facts=facts,
             quest_hint=None if blind else self._stage().hint,
+            suggestion=self._suggestion(npc_id, facts),
         )
+
+    def _suggestion(self, npc_id: NpcId, facts: list[FactContext]) -> str:
+        """把引擎已经知道的事直说，别让小模型自己推。"""
+        parts: list[str] = []
+
+        ready = [f for f in facts if f.can_reveal_now and not f.already_revealed]
+        if ready:
+            f = ready[0]
+            parts.append(
+                f"来访者已经让你觉得值得开口了。他一旦问起，就用 reveal_info 把这件事"
+                f"告诉他（fact 参数填 {f.fact_id}），别再打发他走。"
+            )
+
+        if (
+            self.state.quest.stage >= QuestStage.S3_SOURCE
+            and self.defs.ending_by(npc_id) is not None
+        ):
+            here = self.state.npcs[npc_id].location
+            if here == ANOMALY_SITE:
+                parts.append("你就在无缘塚。要动手就用 use_spellcard。")
+            else:
+                parts.append(
+                    "线索已经凑齐了，源头在无缘塚。来访者要是叫你一起去，就用 move 过去"
+                    "（从这里未必一步到位，可以连着走）。"
+                )
+
+        return "".join(parts)
 
     def _stage(self) -> StageDef:
         return self.defs.stages[self.state.quest.stage.name]
+
+    def _player_objective(self) -> str:
+        """玩家可见的当前目标。门槛一开就要变，否则玩家会一直投赛钱
+        而不知道该开口问了。"""
+        base = self._stage().objective
+        openers = [
+            self.defs.characters[nid].name
+            for nid in self._npcs_here()
+            if any(
+                fid not in self.state.npcs[nid].revealed_facts
+                and can_reveal(self.state.npcs[nid], self.defs.facts[fid].reveal_conditions)
+                for fid in self.state.npcs[nid].holds_facts
+            )
+        ]
+        if openers:
+            return f"{'、'.join(openers)}已经愿意开口了——直接问她无缘塚的事。"
+        return base
 
     def _oblivion_warning(self) -> str:
         left = OBLIVION_THRESHOLD - self.state.player.oblivion_exposure
@@ -548,7 +593,7 @@ class WorldEngine:
             known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
             quest_stage=self.state.quest.stage.name,
             quest_hint=self._stage().hint,
-            objective=self._stage().objective,
+            objective=self._player_objective(),
             oblivion_warning=self._oblivion_warning(),
             ending_title=ending.title if ending else "",
             ending_text=ending.text.strip() if ending else "",

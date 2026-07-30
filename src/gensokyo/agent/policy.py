@@ -92,7 +92,11 @@ def _speak(
     on_chunk: Callable[[str], None] | None,
 ) -> str:
     """阶段二：看着实际结果说一句话，逐块流给调用方。"""
-    messages = build_speak_messages(card, engine.observe(npc_id), history, thought, outcomes)
+    prefix = f"{card.name}："
+    recent_own = [line[len(prefix) :] for line in history if line.startswith(prefix)][-3:]
+    messages = build_speak_messages(
+        card, engine.observe(npc_id), history, thought, outcomes, recent_own
+    )
 
     pieces: list[str] = []
     try:

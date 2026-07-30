@@ -50,7 +50,11 @@
 请根据上面的失败原因换一个做法，不要重复同样的尝试。
 {% endif %}
 
-【你可以使用的动作】
+{% if obs.suggestion %}
+【现在该做的事】
+{{ obs.suggestion }}
+
+{% endif %}【你可以使用的动作】
 {% for tool in tools %}
 - {{ tool.name }}（参数：{{ tool.json_schema()["properties"] | list | join("、") }}）——{{ tool.description }}
 {% endfor %}

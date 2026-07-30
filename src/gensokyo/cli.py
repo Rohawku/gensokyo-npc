@@ -1,4 +1,5 @@
 import os
+import readline  # noqa: F401  上下箭头翻历史；不 import 方向键会变成 ^[[A
 from pathlib import Path
 
 from gensokyo.llm.client import OpenAiCompatibleClient
@@ -25,7 +26,7 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-HELP = """指令：
+HELP = """指令（/move /walk 同 /go，/take /get 同 /pick）：
   /go <地点>     移动
   /give <物品>   把物品交给在场的人
   /pick <物品>   捡起地上的东西
@@ -36,6 +37,29 @@ HELP = """指令：
   /quit          退出
 直接输入文字则是对在场的人说话。
 """
+
+ALIASES = {
+    "go": "go",
+    "move": "go",
+    "walk": "go",
+    "g": "go",
+    "give": "give",
+    "pay": "give",
+    "pick": "pick",
+    "take": "pick",
+    "get": "pick",
+    "look": "look",
+    "l": "look",
+    "save": "save",
+    "load": "load",
+    "help": "help",
+    "h": "help",
+    "quit": "quit",
+    "q": "quit",
+    "exit": "quit",
+}
+"""指令别名。玩家打 /move 而不是 /go 是很自然的事，
+不认识就当台词发给 NPC 会让她显得像个傻子。"""
 
 
 def render(view: PlayerView) -> str:
@@ -117,37 +141,49 @@ def main() -> None:
             break
         if not raw:
             continue
-        if raw == "/quit":
-            break
-        if raw == "/help":
-            print(HELP)
-            continue
-        if raw == "/look":
-            print(render(session.view()))
-            continue
-        if raw == "/save" or raw.startswith("/save "):
-            path = _save_path(raw[5:].strip())
-            n = session.save(path)
-            print(f"\n（已存档 {n} 个动作到 {path.name}）")
-            continue
-        if raw == "/load" or raw.startswith("/load "):
-            path = _save_path(raw[5:].strip())
-            if not path.exists():
-                print(f"\n（没有找到存档 {path.name}）")
+        if raw.startswith("/"):
+            head, _, rest = raw[1:].partition(" ")
+            cmd = ALIASES.get(head.strip().lower())
+            arg = rest.strip()
+
+            if cmd is None:
+                # 绝不能把没认出来的指令当台词发给 NPC——她会一本正经地
+                # 回应「/move 人间之里」这种字符串，看起来像个傻子。
+                print(f"\n（没有「/{head}」这个指令。/help 看全部指令。）")
                 continue
-            n = session.load(path)
-            print(f"\n（已读档，重放了 {n} 个动作。NPC 记得世界发生过什么，但不记得原话。）")
-            print()
-            print(render(session.view()))
-            continue
-        if raw.startswith("/go "):
-            _do(session, session.go(raw[4:].strip()))
-            continue
-        if raw.startswith("/give "):
-            _do(session, session.give(raw[6:].strip()))
-            continue
-        if raw.startswith("/pick "):
-            _do(session, session.pick(raw[6:].strip()))
+            if cmd == "quit":
+                break
+            if cmd == "help":
+                print(HELP)
+                continue
+            if cmd == "look":
+                print(render(session.view()))
+                continue
+            if cmd == "save":
+                path = _save_path(arg)
+                n = session.save(path)
+                print(f"\n（已存档 {n} 个动作到 {path.name}）")
+                continue
+            if cmd == "load":
+                path = _save_path(arg)
+                if not path.exists():
+                    print(f"\n（没有找到存档 {path.name}）")
+                    continue
+                n = session.load(path)
+                print(f"\n（已读档，重放了 {n} 个动作。NPC 记得世界发生过什么，但不记得原话。）")
+                print()
+                print(render(session.view()))
+                continue
+
+            if not arg:
+                print(f"\n（/{head} 后面要跟一个名字，比如 /{head} 赛钱。）")
+                continue
+            if cmd == "go":
+                _do(session, session.go(arg))
+            elif cmd == "give":
+                _do(session, session.give(arg))
+            elif cmd == "pick":
+                _do(session, session.pick(arg))
             continue
 
         try:

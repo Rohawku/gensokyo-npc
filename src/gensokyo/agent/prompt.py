@@ -71,6 +71,7 @@ def build_speak_messages(
     history: list[str],
     thought: str,
     outcomes: list[str],
+    recent_own: list[str] | None = None,
 ) -> list[Msg]:
     """说话阶段只带最少上下文：场景描述、物品清单、情报门槛都已经在
     决策阶段用过了，重复一遍只会拖慢 prompt 处理，而首字延迟正是
@@ -78,7 +79,13 @@ def build_speak_messages(
     body = (
         _env()
         .get_template("npc_speak.jinja")
-        .render(obs=obs, history=history, thought=thought, outcomes=outcomes)
+        .render(
+            obs=obs,
+            history=history,
+            thought=thought,
+            outcomes=outcomes,
+            recent_own=recent_own or [],
+        )
     )
     return [
         Msg(role="system", content=build_system_prompt(card)),
