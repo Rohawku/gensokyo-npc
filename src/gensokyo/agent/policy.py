@@ -10,6 +10,9 @@ from gensokyo.world.ids import NpcId
 from gensokyo.world.tools import Action, ActionResult
 
 MAX_LLM_CALLS = 2
+
+SPEAK_TOOLS = frozenset({"say"})
+"""决策阶段不提供的动作。说话由第二阶段独占。"""
 FALLBACK_UTTERANCE = "……"
 _QUOTE_CHARS = "\"'「」“”"
 
@@ -41,7 +44,7 @@ def _decide(
 
     while calls < MAX_LLM_CALLS:
         obs = engine.observe(npc_id)
-        tools = engine.available_tools(npc_id)
+        tools = [t for t in engine.available_tools(npc_id) if t.name not in SPEAK_TOOLS]
         messages = build_decide_messages(card, obs, history, tools, errors)
 
         raw = llm.complete(messages)
@@ -59,6 +62,11 @@ def _decide(
         outcomes = []
         step_errors: list[str] = []
         for call in candidate.tool_calls:
+            if call.tool in SPEAK_TOOLS:
+                # 说话是第二阶段的事。决策阶段若也 say 一句，event_log 里会
+                # 多出一条玩家从没看见的台词——而它是唯一真相来源。
+                # prompt 里已经不提供 say，这里再兜一层防模型幻觉。
+                continue
             action = Action(actor=str(card.id), tool=call.tool, args=call.args)
             result = engine.apply(action)
             results.append(result)

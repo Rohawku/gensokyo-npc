@@ -59,6 +59,7 @@ class OpenAiCompatibleClient:
         model: str | None = None,
         base_url: str | None = None,
         api_key: str | None = None,
+        reasoning: str | None = None,
     ) -> None:
         from openai import OpenAI
 
@@ -67,17 +68,33 @@ class OpenAiCompatibleClient:
             base_url=base_url or os.environ.get("GENSOKYO_BASE_URL", "http://localhost:8000/v1"),
             api_key=api_key or os.environ.get("GENSOKYO_API_KEY", "not-needed"),
         )
+        self.reasoning = (
+            reasoning if reasoning is not None else os.environ.get("GENSOKYO_REASONING", "")
+        )
+
+    def _extra(self) -> dict[str, Any]:
+        """思考模型会先写几百字推理链才吐出第一个可见字符。实测 qwen3:8b
+        在这上面花掉 25 秒里的 23 秒，而首字延迟直接决定玩起来的手感。
+
+        只在显式配置时才发这个参数——严格的端点（如 OpenAI 官方）会因为
+        未知字段直接 400，不能无条件带上。
+        """
+        if not self.reasoning:
+            return {}
+        return {"extra_body": {"reasoning_effort": self.reasoning}}
 
     def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
         resp = self._client.chat.completions.create(
             model=self.model,
             messages=self._payload(messages),
             temperature=temperature,
+            **self._extra(),
         )
         content = resp.choices[0].message.content
         if content is None:
             raise LlmError("模型返回了空内容")
-        return content
+        # **self._extra() 让 SDK 的返回类型退化成 Any，显式收回 str。
+        return str(content)
 
     def stream(self, messages: list[Msg], temperature: float = 0.8) -> Iterator[str]:
         stream = self._client.chat.completions.create(
@@ -85,6 +102,7 @@ class OpenAiCompatibleClient:
             messages=self._payload(messages),
             temperature=temperature,
             stream=True,
+            **self._extra(),
         )
         for chunk in stream:
             if not chunk.choices:

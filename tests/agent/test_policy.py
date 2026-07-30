@@ -6,6 +6,7 @@ import pytest
 from gensokyo.agent.npc import NpcAgent
 from gensokyo.llm.client import LlmError, Msg, ScriptedLlmClient
 from gensokyo.world.engine import WorldEngine
+from gensokyo.world.events import EventKind
 from gensokyo.world.ids import FactId, ItemId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.rules import bump_emotion
@@ -273,3 +274,25 @@ def test_speak_stage_failure_does_not_escape_after_streaming_started() -> None:
     assert turn.utterance == "……"
     assert eng.state.event_log[-1].payload["text"] == "……"
     assert agent.history[-1].endswith("：……")
+
+
+def test_decision_phase_does_not_offer_or_execute_say() -> None:
+    """说话是第二阶段独占的。决策阶段若也 say 一句，event_log 里会多出
+    一条玩家从没看见的台词——而它是唯一真相来源。"""
+    agent, eng = _agent(
+        [
+            _decide([{"tool": "say", "args": {"text": "这句不该出现在日志里"}}]),
+            "玩家看到的只有这句。",
+        ]
+    )
+
+    turn = agent.act("喂")
+
+    utterances = [
+        ev.payload["text"] for ev in eng.state.event_log if ev.kind is EventKind.NPC_UTTERANCE
+    ]
+    assert utterances == ["玩家看到的只有这句。"]
+    assert turn.utterance == "玩家看到的只有这句。"
+
+    decide_prompt = agent.llm.calls[0][-1].content  # type: ignore[attr-defined]
+    assert "- say（" not in decide_prompt
