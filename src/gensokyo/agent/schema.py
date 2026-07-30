@@ -26,6 +26,17 @@ class NpcTurn(BaseModel):
     latency_ms: int = 0
 
 
+class Decision(BaseModel):
+    """决策阶段的输出契约：只有想法和动作，没有台词。
+
+    说话拆到第二阶段之后，第一次调用的输出变得很短，首字延迟从
+    「整段 JSON 生成完」降到「几十个 token」；顺带让 NPC 能先看到
+    工具执行的实际结果再开口，而不是盲着说话。"""
+
+    thought: str = ""
+    tool_calls: list[Action] = Field(default_factory=list)
+
+
 def _balanced_objects(raw: str) -> Iterator[str]:
     """依次产出每一段花括号配平的顶层片段。
 
@@ -75,7 +86,7 @@ def _extract_turn_payload(raw: str) -> dict[str, Any]:
     raise TurnParseError(f"回复里找不到 JSON 对象：{raw[:120]!r}")
 
 
-def parse_npc_turn(raw: str, actor: str = "") -> NpcTurn:
+def parse_decision(raw: str, actor: str = "") -> Decision:
     data = _extract_turn_payload(raw)
 
     calls: list[Action] = []
@@ -92,18 +103,6 @@ def parse_npc_turn(raw: str, actor: str = "") -> NpcTurn:
         )
 
     try:
-        turn = NpcTurn(
-            thought=str(data.get("thought", "")),
-            utterance=data["utterance"],
-            tool_calls=calls,
-        )
-    except KeyError as exc:
-        raise TurnParseError("回复缺少 utterance 字段") from exc
+        return Decision(thought=str(data.get("thought", "")), tool_calls=calls)
     except ValidationError as exc:
         raise TurnParseError(f"字段校验失败：{exc}") from exc
-
-    if not turn.utterance.strip():
-        # 空 utterance 会 emit 一条空文本事件：玩家屏幕上什么都没有，
-        # 但日志里看起来一切正常。当作解析失败，让策略层重试一次。
-        raise TurnParseError("utterance 是空的，NPC 必须说出一句话")
-    return turn

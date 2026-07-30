@@ -47,7 +47,7 @@ def build_system_prompt(card: CharacterCard) -> str:
     return "\n".join(lines)
 
 
-def build_messages(
+def build_decide_messages(
     card: CharacterCard,
     obs: Observation,
     history: list[str],
@@ -56,8 +56,29 @@ def build_messages(
 ) -> list[Msg]:
     body = (
         _env()
-        .get_template("npc_turn.jinja")
+        .get_template("npc_decide.jinja")
         .render(obs=obs, history=history, tools=tools, errors=errors)
+    )
+    return [
+        Msg(role="system", content=build_system_prompt(card)),
+        Msg(role="user", content=body),
+    ]
+
+
+def build_speak_messages(
+    card: CharacterCard,
+    obs: Observation,
+    history: list[str],
+    thought: str,
+    outcomes: list[str],
+) -> list[Msg]:
+    """说话阶段只带最少上下文：场景描述、物品清单、情报门槛都已经在
+    决策阶段用过了，重复一遍只会拖慢 prompt 处理，而首字延迟正是
+    这次拆分要压下去的东西。"""
+    body = (
+        _env()
+        .get_template("npc_speak.jinja")
+        .render(obs=obs, history=history, thought=thought, outcomes=outcomes)
     )
     return [
         Msg(role="system", content=build_system_prompt(card)),

@@ -1,4 +1,5 @@
 import os
+from collections.abc import Iterator
 from typing import Any, Protocol, cast
 
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ class Msg(BaseModel):
 
 class LlmClient(Protocol):
     def complete(self, messages: list[Msg], temperature: float = 0.8) -> str: ...
+    def stream(self, messages: list[Msg], temperature: float = 0.8) -> Iterator[str]: ...
 
 
 class ScriptedLlmClient:
@@ -25,7 +27,7 @@ class ScriptedLlmClient:
         self._replies = list(replies)
         self.calls: list[list[Msg]] = []
 
-    def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
+    def _next_reply(self, messages: list[Msg]) -> str:
         # 存快照而非引用。策略层若复用同一个 messages 列表就地追加，
         # 存引用会让所有 calls[i] 指向同一对象——「第二次调用的 prompt
         # 里含回灌的错误原因」这类断言就会空洞通过。
@@ -33,6 +35,20 @@ class ScriptedLlmClient:
         if not self._replies:
             raise LlmError("脚本化客户端的预设回复已用尽")
         return self._replies.pop(0)
+
+    def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
+        return self._next_reply(messages)
+
+    def stream(self, messages: list[Msg], temperature: float = 0.8) -> Iterator[str]:
+        # 逐字符 yield：测试要能区分「真的走了流式路径」和「一次性拿到
+        # 整段再假装分块」。取回复要在生成器外面做，否则调用方不迭代
+        # 就不会记录 calls，也不会在回复用尽时抛错。
+        reply = self._next_reply(messages)
+
+        def chunks() -> Iterator[str]:
+            yield from reply
+
+        return chunks()
 
 
 class OpenAiCompatibleClient:
@@ -53,15 +69,32 @@ class OpenAiCompatibleClient:
         )
 
     def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
-        # SDK 要求 role 是字面量类型的 TypedDict，而我们的 role 是运行时字符串。
-        # 运行时等价，类型上无法收窄，故显式 cast。
-        payload = cast(Any, [{"role": m.role, "content": m.content} for m in messages])
         resp = self._client.chat.completions.create(
             model=self.model,
-            messages=payload,
+            messages=self._payload(messages),
             temperature=temperature,
         )
         content = resp.choices[0].message.content
         if content is None:
             raise LlmError("模型返回了空内容")
         return content
+
+    def stream(self, messages: list[Msg], temperature: float = 0.8) -> Iterator[str]:
+        stream = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._payload(messages),
+            temperature=temperature,
+            stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            piece = chunk.choices[0].delta.content
+            if piece:
+                yield piece
+
+    @staticmethod
+    def _payload(messages: list[Msg]) -> Any:
+        # SDK 要求 role 是字面量类型的 TypedDict，而我们的 role 是运行时字符串。
+        # 运行时等价，类型上无法收窄，故显式 cast。
+        return cast(Any, [{"role": m.role, "content": m.content} for m in messages])

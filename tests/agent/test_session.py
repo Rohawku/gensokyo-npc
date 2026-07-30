@@ -10,10 +10,9 @@ from gensokyo.session.loop import Session
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _reply(utterance: str) -> str:
-    return json.dumps(
-        {"thought": "…", "tool_calls": [], "utterance": utterance}, ensure_ascii=False
-    )
+def _turn(utterance: str) -> list[str]:
+    """一个完整回合要两条预设回复：决策 JSON，然后台词。"""
+    return [json.dumps({"thought": "…", "tool_calls": []}, ensure_ascii=False), utterance]
 
 
 def _session(replies: list[str]) -> Session:
@@ -25,12 +24,24 @@ def _session(replies: list[str]) -> Session:
 
 
 def test_say_reaches_the_npc_who_is_present() -> None:
-    sess = _session([_reply("干嘛。")])
+    sess = _session(_turn("干嘛。"))
 
     turns = sess.say("喂")
 
     assert len(turns) == 1
     assert turns[0].utterance == "干嘛。"
+
+
+def test_say_streams_the_utterance_to_the_callback() -> None:
+    """CLI 的打字机效果全靠这条通路：Session.say → agent.act → run_turn。
+    中间任何一环丢掉 on_chunk，玩家就会对着空屏幕等十几秒。"""
+    sess = _session(_turn("干嘛。"))
+    seen: list[str] = []
+
+    turns = sess.say("喂", on_chunk=seen.append)
+
+    assert len(seen) > 1
+    assert "".join(seen) == turns[0].utterance
 
 
 def test_say_with_nobody_around_returns_no_turns() -> None:
@@ -43,7 +54,7 @@ def test_say_with_nobody_around_returns_no_turns() -> None:
 
 
 def test_tick_advances_after_each_player_turn() -> None:
-    sess = _session([_reply("嗯。")])
+    sess = _session(_turn("嗯。"))
 
     sess.say("喂")
 

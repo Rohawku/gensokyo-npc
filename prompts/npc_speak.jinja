@@ -1,0 +1,20 @@
+【当前场景】
+你在{{ obs.location_name }}。{% if obs.player_is_here %}来访者就在你面前。{% else %}来访者不在这里。{% endif %}
+你现在的{{ obs.emotion_var }}是 {{ "%.2f"|format(obs.emotion) }}。{{ obs.mode_speech_hint }}
+你对来访者的好感是 {{ obs.attitude }}。
+
+【最近的对话】
+{% if history %}{% for line in history %}{{ line }}
+{% endfor %}{% else %}还没说过话。
+{% endif %}
+【你刚才的想法】
+{{ thought or "（没想什么）" }}
+
+【你刚才做了什么，结果如何】
+{% if outcomes %}{% for line in outcomes %}- {{ line }}
+{% endfor %}{% else %}你什么也没做。
+{% endif %}
+
+【现在说话】
+根据上面的结果说一句话。只输出你说出口的内容本身：
+不要加引号，不要写你的名字，不要加旁白或动作描写，不要解释，不要输出 JSON。

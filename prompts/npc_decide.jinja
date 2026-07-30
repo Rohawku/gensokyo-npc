@@ -58,6 +58,7 @@
 
 【输出格式】
 只输出一个 JSON 对象，不要有任何其他文字、不要加代码围栏。照下面这个形状填：
-{"thought": "我懒得管这事", "tool_calls": [{"tool": "say", "args": {"text": "自己想办法去。"}}], "utterance": "自己想办法去。"}
+{"thought": "我懒得管这事", "tool_calls": [{"tool": "give_item", "args": {"item": "offering_coin"}}]}
 tool_calls 里的 tool 必须是上面列出的动作名原文，args 的键必须是该动作的参数名原文。
-不需要做任何动作时 tool_calls 填 []。utterance 是你真正说出口的那句话，不能为空。
+不需要做任何动作时 tool_calls 填 []。
+现在不要说话——这一步只决定你想什么、做什么。

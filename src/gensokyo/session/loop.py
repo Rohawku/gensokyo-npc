@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from gensokyo.agent.npc import NpcAgent
@@ -54,11 +55,15 @@ class Session:
                 return loc_id
         return None
 
-    def say(self, text: str) -> list[NpcTurn]:
+    def say(self, text: str, on_chunk: Callable[[str], None] | None = None) -> list[NpcTurn]:
         self.engine.apply(Action(actor="player", tool="say", args={"text": text}))
         turns: list[NpcTurn] = []
         for panel in self.engine.observe_player().npcs_here:
-            turns.append(self.agents[panel.npc_id].act(text))
+            if turns and on_chunk is not None:
+                # 多个 NPC 同场时台词会流到同一行上。只有这里知道说话人
+                # 换了，所以分隔符必须在这里发出去。
+                on_chunk("\n")
+            turns.append(self.agents[panel.npc_id].act(text, on_chunk))
         self.engine.tick()
         return turns
 
