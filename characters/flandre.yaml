@@ -27,7 +27,7 @@ memory:
   reflection_threshold: 8.0
 
 emotion:
-  variable: excitement
+  variable: 兴奋度
   initial: 0.2
   decay_per_tick: 0.02
   event_deltas:

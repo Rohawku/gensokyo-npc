@@ -1,33 +1,49 @@
 【当前场景】
 你在{{ obs.location_name }}。{{ obs.location_description }}
-{% if obs.others_here %}这里还有：{{ obs.others_here | join("、") }}。{% endif %}
-{% if obs.player_is_here %}来访者就在你面前。{% else %}来访者不在这里。{% endif %}
-现在你的{{ obs.emotion_var }}是 {{ "%.2f"|format(obs.emotion) }}（状态：{{ obs.mode }}）。{{ obs.mode_speech_hint }}
+{% if obs.others_here %}
+这里还有：{{ obs.others_here | join("、") }}。
+{% endif %}
+{% if obs.player_is_here %}
+来访者就在你面前。
+{% else %}
+来访者不在这里。
+{% endif %}
+你现在的{{ obs.emotion_var }}是 {{ "%.2f"|format(obs.emotion) }}。{{ obs.mode_speech_hint }}
 你对来访者的好感是 {{ obs.attitude }}。
-{% if obs.quest_stage %}你了解到的事态进展：{{ obs.quest_stage }}。{% endif %}
+{% if obs.quest_hint %}
+你了解到的情况：{{ obs.quest_hint }}。
+{% endif %}
 
 【你身上的东西】
-{% if obs.own_inventory %}{% for item, n in obs.own_inventory.items() %}{{ item }}×{{ n }} {% endfor %}{% else %}什么都没有。{% endif %}
+{% if obs.own_inventory %}{% for item, n in obs.own_inventory.items() %}{{ item }}×{{ n }}{% if not loop.last %}、{% endif %}{% endfor %}
+{% else %}什么都没有。
+{% endif %}
 
 【这里的东西】
-{% if obs.items_here %}{% for item, n in obs.items_here.items() %}{{ item }}×{{ n }} {% endfor %}{% else %}没什么特别的。{% endif %}
+{% if obs.items_here %}{% for item, n in obs.items_here.items() %}{{ item }}×{{ n }}{% if not loop.last %}、{% endif %}{% endfor %}
+{% else %}没什么特别的。
+{% endif %}
 
 【你知道的情报】
 {% for f in obs.facts %}
-- {{ f.fact_id }}：{{ f.content }}
-  {% if f.already_revealed %}（已经告诉过来访者了）
-  {% elif f.can_reveal_now %}（条件已满足，现在可以说）
-  {% else %}（还不能说——{{ f.gate_hint }}）
-  {% endif %}
+- {{ f.content }}
+{% if f.already_revealed %}
+  （已经告诉过来访者了，不用再说一遍。对应的 fact 参数是 {{ f.fact_id }}）
+{% elif f.can_reveal_now %}
+  （条件已满足，现在可以说出来。用 reveal_info，fact 参数填 {{ f.fact_id }}）
+{% else %}
+  （还不能说——{{ f.gate_hint }}）
+{% endif %}
 {% else %}
 你没有特别的情报。
 {% endfor %}
 
 【最近的对话】
 {% if history %}{% for line in history %}{{ line }}
-{% endfor %}{% else %}还没说过话。{% endif %}
-
+{% endfor %}{% else %}还没说过话。
+{% endif %}
 {% if errors %}
+
 【上一次尝试的结果】
 {% for err in errors %}- {{ err }}
 {% endfor %}
@@ -35,11 +51,13 @@
 {% endif %}
 
 【你可以使用的动作】
-{% for tool in tools %}- {{ tool.name }}：{{ tool.description }} 参数：{{ tool.json_schema()["properties"] | list | join("、") }}
+{% for tool in tools %}
+- {{ tool.name }}（参数：{{ tool.json_schema()["properties"] | list | join("、") }}）——{{ tool.description }}
 {% endfor %}
 只能使用上面列出的动作。列表之外的动作你现在做不到。
 
 【输出格式】
-只输出一个 JSON 对象，不要有任何其他文字：
-{"thought": "你的内心想法", "tool_calls": [{"tool": "动作名", "args": {"参数": "值"}}], "utterance": "你说出口的话"}
-不需要做任何动作时 tool_calls 填 []。
+只输出一个 JSON 对象，不要有任何其他文字、不要加代码围栏。照下面这个形状填：
+{"thought": "我懒得管这事", "tool_calls": [{"tool": "say", "args": {"text": "自己想办法去。"}}], "utterance": "自己想办法去。"}
+tool_calls 里的 tool 必须是上面列出的动作名原文，args 的键必须是该动作的参数名原文。
+不需要做任何动作时 tool_calls 填 []。utterance 是你真正说出口的那句话，不能为空。

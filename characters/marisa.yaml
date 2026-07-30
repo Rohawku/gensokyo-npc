@@ -27,7 +27,7 @@ memory:
   reflection_threshold: 3.0
 
 emotion:
-  variable: eagerness
+  variable: 热切度
   initial: 0.3
   decay_per_tick: 0.02
   event_deltas:

@@ -27,11 +27,14 @@ class Observation(BaseModel):
     emotion: float
     mode: str
     mode_speech_hint: str
-    own_inventory: dict[ItemId, int] = Field(default_factory=dict)
-    items_here: dict[ItemId, int] = Field(default_factory=dict)
+    own_inventory: dict[str, int] = Field(default_factory=dict)
+    items_here: dict[str, int] = Field(default_factory=dict)
+    """以中文物品名为键。Observation 只服务 prompt 组装，
+    英文 id 泄漏进去就会被 NPC 说出口；面板数据走 PlayerView。"""
     others_here: list[str] = Field(default_factory=list)
     facts: list[FactContext] = Field(default_factory=list)
-    quest_stage: str | None = None
+    quest_hint: str | None = None
+    """剧情进展的中文说法。为 None 表示该 NPC 被信息隔离，不知道外面的事。"""
 
 
 class NpcPanel(BaseModel):

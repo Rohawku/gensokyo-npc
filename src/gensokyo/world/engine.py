@@ -7,7 +7,7 @@ from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
 from gensokyo.world.observation import FactContext, NpcPanel, Observation, PlayerView
-from gensokyo.world.quest import compute_stage
+from gensokyo.world.quest import STAGE_HINT, compute_stage
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
     apply_emotion_decay,
@@ -298,6 +298,9 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev], f"拿走了{self._item_name(args.item)}。")
 
+    def _named(self, bag: dict[ItemId, int]) -> dict[str, int]:
+        return {self._item_name(item): n for item, n in bag.items()}
+
     def _item_name(self, item: ItemId) -> str:
         known = self.defs.items.get(item)
         return known.name if known else str(item)
@@ -417,15 +420,15 @@ class WorldEngine:
             emotion=npc.emotion,
             mode=npc.mode,
             mode_speech_hint=hint,
-            own_inventory=dict(npc.inventory),
-            items_here=dict(self.state.locations[npc.location].items),
+            own_inventory=self._named(npc.inventory),
+            items_here=self._named(self.state.locations[npc.location].items),
             others_here=[
                 self.defs.characters[other].name
                 for other in sorted(self.state.npcs)
                 if other != npc_id and self.state.npcs[other].location == npc.location
             ],
             facts=facts,
-            quest_stage=None if blind else self.state.quest.stage.name,
+            quest_hint=None if blind else STAGE_HINT[self.state.quest.stage],
         )
 
     def observe_player(self) -> PlayerView:

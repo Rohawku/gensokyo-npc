@@ -23,7 +23,7 @@ def test_initial_state_seeds_npc_facts_and_emotion() -> None:
     flandre = state.npcs[NpcId("flandre")]
 
     assert flandre.holds_facts == {FactId("ancient_oblivion_memory")}
-    assert flandre.emotion_var == "excitement"
+    assert flandre.emotion_var == "兴奋度"
     assert flandre.emotion == 0.2
     assert flandre.mode == "calm"
 

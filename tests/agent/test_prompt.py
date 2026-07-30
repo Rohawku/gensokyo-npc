@@ -2,7 +2,7 @@ from pathlib import Path
 
 from gensokyo.agent.prompt import build_messages
 from gensokyo.world.engine import WorldEngine
-from gensokyo.world.ids import NpcId
+from gensokyo.world.ids import ItemId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.rules import bump_attitude
 from gensokyo.world.state import build_initial_state
@@ -80,3 +80,43 @@ def test_dialogue_history_and_errors_are_rendered() -> None:
 
     assert "玩家：喂" in user
     assert "上一次 move 失败" in user
+
+
+def test_prompt_prose_contains_no_internal_identifiers() -> None:
+    """内部标识符（物品 id、情绪变量名、模式名、阶段枚举名）不能进 prompt 散文，
+    紧贴中文出现时模型有概率把它们说出口。工具名与参数名是例外——
+    那是模型必须原样填进 JSON 的东西。"""
+    eng = _engine()
+    eng.state.npcs[NpcId("marisa")].inventory[ItemId("rare_book")] = 1
+
+    leaks = ["rare_book", "magic_mushroom", "withered_flower", "old_music_box"]
+    leaks += ["annoyance", "eagerness", "excitement"]
+    leaks += ["S0_UNAWARE", "S1_ANOMALY", "S2_CLUES", "S3_SOURCE"]
+
+    for npc_id in (NpcId("reimu"), NpcId("marisa"), NpcId("flandre")):
+        card = eng.defs.characters[npc_id]
+        user = build_messages(card, eng.observe(npc_id), [], eng.available_tools(npc_id), [])[
+            -1
+        ].content
+        for token in leaks:
+            assert token not in user, f"{npc_id} 的 prompt 泄漏了内部标识符 {token}"
+
+
+def test_unrevealable_fact_hides_its_id_from_the_model() -> None:
+    """门槛未满足时连 fact_id 都不给，模型凑不出 reveal_info 的参数。
+    这是引擎门槛之外的第二层防线。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "barrier_anomaly_time" not in user
+
+    bump_attitude(eng.state.npcs[NpcId("reimu")], 24)
+    unlocked = build_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "barrier_anomaly_time" in unlocked

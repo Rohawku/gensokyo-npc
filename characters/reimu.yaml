@@ -27,7 +27,7 @@ memory:
   reflection_threshold: 4.0
 
 emotion:
-  variable: annoyance
+  variable: 烦躁度
   initial: 0.1
   decay_per_tick: 0.03
   event_deltas:
