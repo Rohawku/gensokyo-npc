@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 
 from gensokyo.llm.client import ScriptedLlmClient
@@ -104,3 +105,46 @@ def test_agents_are_created_for_every_character() -> None:
     sess = _session([])
 
     assert set(sess.agents) == {"reimu", "marisa", "flandre"}
+
+
+def test_save_and_load_round_trip(tmp_path: Path) -> None:
+    """存档只写动作日志，世界状态由重放推导——存两份就会不一致。"""
+    sess = _session([])
+    sess.go("人间之里")
+    sess.pick("忘却之花")
+    before = sess.view()
+
+    path = tmp_path / "s.json"
+    assert sess.save(path) == len(sess.engine.state.action_log)
+
+    fresh = _session([])
+    assert fresh.load(path) > 0
+    after = fresh.view()
+
+    assert after.location_name == before.location_name
+    assert after.inventory == before.inventory
+    assert after.quest_stage == before.quest_stage
+
+
+def test_load_rebinds_agents_to_the_new_engine() -> None:
+    """读档换掉了 engine 实例，agent 若还指向旧的，NPC 会活在另一个世界里。"""
+    sess = _session([])
+    sess.go("人间之里")
+    path = Path(tempfile.mkdtemp()) / "s.json"
+    sess.save(path)
+
+    fresh = _session([])
+    fresh.load(path)
+
+    for agent in fresh.agents.values():
+        assert agent.engine is fresh.engine
+        assert agent.history == []
+
+
+def test_is_over_reflects_the_ending() -> None:
+    sess = _session([])
+    assert sess.is_over() is False
+
+    sess.engine.state.quest.ending = "forgotten"
+
+    assert sess.is_over() is True

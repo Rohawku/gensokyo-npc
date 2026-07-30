@@ -104,6 +104,14 @@ class FactDef(StrictModel):
     is_clue: bool = False
 
 
+class EndingDef(StrictModel):
+    id: str
+    by: NpcId | None = None
+    """由哪个 NPC 收尾。None 表示失败结局，没人解决。"""
+    title: str
+    text: str
+
+
 class ItemDef(StrictModel):
     id: ItemId
     name: str
@@ -123,6 +131,13 @@ class WorldDefs(StrictModel):
     items: dict[ItemId, ItemDef]
     facts: dict[FactId, FactDef]
     characters: dict[NpcId, CharacterCard]
+    endings: dict[str, EndingDef]
+
+    def ending_by(self, npc_id: NpcId) -> EndingDef | None:
+        for ending in self.endings.values():
+            if ending.by == npc_id:
+                return ending
+        return None
 
     def clue_facts(self) -> set[FactId]:
         return {fid for fid, f in self.facts.items() if f.is_clue}

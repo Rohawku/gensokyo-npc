@@ -11,7 +11,7 @@ class EventKind(StrEnum):
     PLAYER_ACTION = "player_action"
     NPC_UTTERANCE = "npc_utterance"
     NPC_ACTION = "npc_action"
-    WORLD_CHANGE = "world_change"
+    MEMORY_LOST = "memory_lost"
     QUEST_ADVANCE = "quest_advance"
 
 
@@ -26,4 +26,3 @@ class Event(BaseModel):
     actor: str
     location: LocationId
     payload: dict[str, Any] = Field(default_factory=dict)
-    caused_by: EventId | None = None

@@ -25,7 +25,11 @@ class PlayerState(BaseModel):
     location: LocationId
     inventory: dict[ItemId, int] = Field(default_factory=dict)
     known_facts: set[FactId] = Field(default_factory=set)
-    reputation: int = 0
+    oblivion_exposure: int = 0
+    """在无缘塚连续行动的次数。离开花田即清零，累到阈值会丢掉一条线索。
+
+    按动作数而非 tick 计数，是为了让它进动作日志、能被 replay 精确重现——
+    挂在 tick 上会让存档读档时丢掉的线索凭空回来。"""
 
 
 class NpcState(BaseModel):

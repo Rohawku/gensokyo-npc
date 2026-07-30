@@ -18,7 +18,7 @@ def test_event_is_frozen() -> None:
         ev.payload = {}  # type: ignore[misc]
 
 
-def test_event_caused_by_defaults_to_none() -> None:
+def test_event_payload_defaults_to_empty_dict() -> None:
     ev = Event(
         id=EventId("e00002"),
         tick=1,
@@ -26,5 +26,4 @@ def test_event_caused_by_defaults_to_none() -> None:
         actor="reimu",
         location=LocationId("hakurei_shrine"),
     )
-    assert ev.caused_by is None
     assert ev.payload == {}

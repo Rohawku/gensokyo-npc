@@ -7,7 +7,15 @@ from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
 from gensokyo.world.observation import FactContext, NpcPanel, Observation, PlayerView
-from gensokyo.world.quest import STAGE_HINT, compute_stage
+from gensokyo.world.quest import (
+    ACTION_LIMIT,
+    ANOMALY_SITE,
+    OBLIVION_THRESHOLD,
+    OBLIVION_WARNING,
+    STAGE_HINT,
+    TIMEOUT_ENDING,
+    compute_stage,
+)
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
     apply_emotion_decay,
@@ -16,7 +24,7 @@ from gensokyo.world.rules import (
     can_reveal,
     emotion_delta_for,
 )
-from gensokyo.world.state import WorldState
+from gensokyo.world.state import QuestStage, WorldState
 from gensokyo.world.tools import (
     TOOL_REGISTRY,
     Action,
@@ -104,7 +112,10 @@ class WorldEngine:
         result = handler(action, args)
         if result.ok:
             self.state.action_log.append(action)
+            self._advance_oblivion(action)
             self.refresh_quest()
+            if self.state.quest.ending is None and len(self.state.action_log) >= ACTION_LIMIT:
+                self._finish(TIMEOUT_ENDING)
         return result
 
     @classmethod
@@ -116,6 +127,50 @@ class WorldEngine:
         for action in actions:
             engine.apply(action)
         return engine
+
+    def _advance_oblivion(self, action: Action) -> None:
+        """玩家在无缘塚每行动一次就更接近遗忘；离开花田即清零。
+
+        计数挂在动作上而不是 tick 上，这样它进动作日志、能被 replay 精确重现。
+        挂在 tick 上会让存档读档时丢掉的线索凭空回来。
+        """
+        if action.actor != "player":
+            return
+
+        player = self.state.player
+        if player.location != ANOMALY_SITE:
+            player.oblivion_exposure = 0
+            return
+
+        player.oblivion_exposure += 1
+        if player.oblivion_exposure < OBLIVION_THRESHOLD:
+            return
+
+        player.oblivion_exposure = 0
+        if not player.known_facts:
+            return
+
+        # 取排序后的第一条，保证回放确定性——不能用随机或集合迭代序。
+        lost = sorted(player.known_facts)[0]
+        player.known_facts.discard(lost)
+        self._emit(
+            EventKind.MEMORY_LOST,
+            "world",
+            {"fact": lost, "content": self.defs.facts[lost].content},
+        )
+
+    def _finish(self, ending_id: str) -> None:
+        self.state.quest.stage = QuestStage.S4_END
+        self.state.quest.ending = ending_id
+        self._emit(
+            EventKind.QUEST_ADVANCE,
+            "world",
+            {
+                "stage": int(QuestStage.S4_END),
+                "stage_name": QuestStage.S4_END.name,
+                "ending": ending_id,
+            },
+        )
 
     def refresh_quest(self) -> None:
         clues = self.defs.clue_facts()
@@ -336,10 +391,13 @@ class WorldEngine:
                 "现在还不想告诉对方这件事——对方还没让你觉得值得说。",
             )
 
-        if args.fact in npc.revealed_facts:
-            # 已经说过了。不算失败——把它当失败会给策略层一个语义错乱的
-            # 「你说不出来」。但不再产生事件，否则重复揭示会用同质条目
-            # 灌满 event_log，挤占后续 prompt 的近期事件窗口。
+        if args.fact in npc.revealed_facts and args.fact in self.state.player.known_facts:
+            # 已经说过、而且对方还记得。不算失败——把它当失败会给策略层一个
+            # 语义错乱的「你说不出来」。但不再产生事件，否则重复揭示会用同质
+            # 条目灌满 event_log，挤占后续 prompt 的近期事件窗口。
+            #
+            # 「对方还记得」这个条件是必需的：玩家被无缘塚的花吸走记忆后，
+            # 只看 revealed_facts 会让她拒绝重讲，线索永久拿不回来。
             return ActionResult.succeeded([], f"这件事你已经告诉过对方了：{fact.content}")
 
         self.state.player.known_facts.add(args.fact)
@@ -373,6 +431,18 @@ class WorldEngine:
             action.actor,
             {"tool": "use_spellcard", "name": args.name},
         )
+
+        # 剧情的最后一步由 NPC 自己走完：玩家说服她来无缘塚，她动手解决。
+        npc_id = NpcId(action.actor)
+        ending = self.defs.ending_by(npc_id)
+        if (
+            ending is not None
+            and self.state.npcs[npc_id].location == ANOMALY_SITE
+            and self.state.quest.stage >= QuestStage.S3_SOURCE
+        ):
+            self._finish(ending.id)
+            return ActionResult.succeeded([ev], ending.text.strip())
+
         return ActionResult.succeeded([ev], f"发动了符卡「{args.name}」。")
 
     def _do_break_item(self, action: Action, args: BaseModel) -> ActionResult:
@@ -453,9 +523,17 @@ class WorldEngine:
             quest_hint=None if blind else STAGE_HINT[self.state.quest.stage],
         )
 
+    def _oblivion_warning(self) -> str:
+        left = OBLIVION_THRESHOLD - self.state.player.oblivion_exposure
+        if self.state.player.oblivion_exposure < OBLIVION_WARNING:
+            return ""
+        return f"思绪开始模糊了——再在这里待 {left} 步，你会忘掉一件事。"
+
     def observe_player(self) -> PlayerView:
         loc_id = self.state.player.location
         loc = self.defs.locations[loc_id]
+        ending_id = self.state.quest.ending
+        ending = self.defs.endings.get(ending_id) if ending_id else None
 
         return PlayerView(
             tick=self.state.tick,
@@ -468,6 +546,9 @@ class WorldEngine:
             known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
             quest_stage=self.state.quest.stage.name,
             quest_hint=STAGE_HINT[self.state.quest.stage],
+            oblivion_warning=self._oblivion_warning(),
+            ending_title=ending.title if ending else "",
+            ending_text=ending.text.strip() if ending else "",
             npcs_here=[
                 NpcPanel(
                     npc_id=nid,

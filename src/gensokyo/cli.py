@@ -12,6 +12,8 @@ HELP = """指令：
   /give <物品>   把物品交给在场的人
   /pick <物品>   捡起地上的东西
   /look          查看当前状态
+  /save [名字]   存档（默认 saves/quicksave.json）
+  /load [名字]   读档
   /help          显示这段说明
   /quit          退出
 直接输入文字则是对在场的人说话。
@@ -35,10 +37,23 @@ def render(view: PlayerView) -> str:
         if npc.mode_hint:
             lines.append(f"      {npc.mode_hint}")
     lines.append(f"进展：{view.quest_hint}")
+    if view.oblivion_warning:
+        lines.append(f"⚠ {view.oblivion_warning}")
     if view.known_facts:
         lines.append("已知线索：")
         lines += [f"  · {f}" for f in view.known_facts]
     return "\n".join(lines)
+
+
+def render_ending(view: PlayerView) -> str:
+    return f"\n════ {view.ending_title} ════\n\n{view.ending_text}\n"
+
+
+SAVE_DIR = REPO_ROOT / "saves"
+
+
+def _save_path(arg: str) -> Path:
+    return SAVE_DIR / f"{arg or 'quicksave'}.json"
 
 
 def _do(session: Session, result: ActionResult) -> None:
@@ -78,6 +93,21 @@ def main() -> None:
         if raw == "/look":
             print(render(session.view()))
             continue
+        if raw == "/save" or raw.startswith("/save "):
+            path = _save_path(raw[5:].strip())
+            n = session.save(path)
+            print(f"\n（已存档 {n} 个动作到 {path.name}）")
+            continue
+        if raw == "/load" or raw.startswith("/load "):
+            path = _save_path(raw[5:].strip())
+            if not path.exists():
+                print(f"\n（没有找到存档 {path.name}）")
+                continue
+            n = session.load(path)
+            print(f"\n（已读档，重放了 {n} 个动作。NPC 记得世界发生过什么，但不记得原话。）")
+            print()
+            print(render(session.view()))
+            continue
         if raw.startswith("/go "):
             _do(session, session.go(raw[4:].strip()))
             continue
@@ -104,6 +134,10 @@ def main() -> None:
                 print(f"  {mark} {detail}")
         print()
         print(render(session.view()))
+
+        if session.is_over():
+            print(render_ending(session.view()))
+            break
 
 
 if __name__ == "__main__":

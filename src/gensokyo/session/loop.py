@@ -3,6 +3,7 @@ from pathlib import Path
 from gensokyo.agent.npc import NpcAgent
 from gensokyo.agent.schema import NpcTurn
 from gensokyo.llm.client import LlmClient
+from gensokyo.session.save import load_actions, save_actions
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import LocationId, NpcId
 from gensokyo.world.loader import load_defs
@@ -28,6 +29,24 @@ class Session:
 
     def view(self) -> PlayerView:
         return self.engine.observe_player()
+
+    def is_over(self) -> bool:
+        return self.engine.state.quest.ending is not None
+
+    def save(self, path: Path) -> int:
+        """存档只写动作日志——世界状态是它的推导结果，存两份就会不一致。"""
+        save_actions(path, self.engine.state.action_log)
+        return len(self.engine.state.action_log)
+
+    def load(self, path: Path) -> int:
+        """从动作日志重建世界。NPC 的对话历史不在存档里（那是 agent 层的
+        短期记忆），所以读档后 NPC 记得世界发生过什么，但不记得原话。"""
+        actions = load_actions(path)
+        self.engine = WorldEngine.replay(actions, self.engine.defs)
+        for agent in self.agents.values():
+            agent.engine = self.engine
+            agent.history.clear()
+        return len(actions)
 
     def _location_id_by_name(self, name: str) -> LocationId | None:
         for loc_id, loc in self.engine.defs.locations.items():

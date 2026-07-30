@@ -4,7 +4,14 @@ from typing import Any, Protocol
 
 import yaml
 
-from gensokyo.world.defs import CharacterCard, FactDef, ItemDef, LocationDef, WorldDefs
+from gensokyo.world.defs import (
+    CharacterCard,
+    EndingDef,
+    FactDef,
+    ItemDef,
+    LocationDef,
+    WorldDefs,
+)
 
 
 class _HasStrId(Protocol):
@@ -46,6 +53,7 @@ def load_defs(scenario_dir: Path, characters_dir: Path) -> WorldDefs:
     locations = [LocationDef.model_validate(d) for d in _read_list(scenario_dir / "locations.yaml")]
     items = [ItemDef.model_validate(d) for d in _read_list(scenario_dir / "items.yaml")]
     facts = [FactDef.model_validate(d) for d in _read_list(scenario_dir / "facts.yaml")]
+    endings = [EndingDef.model_validate(d) for d in _read_list(scenario_dir / "endings.yaml")]
 
     cards: list[CharacterCard] = []
     for card_path in sorted(characters_dir.glob("*.yaml")):
@@ -56,4 +64,5 @@ def load_defs(scenario_dir: Path, characters_dir: Path) -> WorldDefs:
         items=_index(items, "物品"),
         facts=_index(facts, "事实"),
         characters=_index(cards, "角色"),
+        endings=_index(endings, "结局"),
     )
