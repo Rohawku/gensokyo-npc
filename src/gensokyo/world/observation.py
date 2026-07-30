@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from gensokyo.world.ids import FactId, ItemId, LocationId, NpcId
+from gensokyo.world.ids import FactId, LocationId, NpcId
 
 
 class FactContext(BaseModel):
@@ -44,6 +44,9 @@ class NpcPanel(BaseModel):
     emotion_var: str
     emotion: float
     mode: str
+    mode_hint: str = ""
+    """模式的中文说法。mode 是内部标识符（normal/calm/destructive），
+    不该出现在玩家屏幕上。"""
 
 
 class PlayerView(BaseModel):
@@ -55,8 +58,11 @@ class PlayerView(BaseModel):
     location_name: str
     location_description: str
     exits: list[str] = Field(default_factory=list)
-    inventory: dict[ItemId, int] = Field(default_factory=dict)
-    items_here: dict[ItemId, int] = Field(default_factory=dict)
+    inventory: dict[str, int] = Field(default_factory=dict)
+    items_here: dict[str, int] = Field(default_factory=dict)
+    """以中文物品名为键。玩家屏幕上不该出现 offering_coin 这种 id。"""
     known_facts: list[str] = Field(default_factory=list)
     quest_stage: str = ""
+    """阶段枚举名，供调试与测试。玩家可见的文本用 quest_hint。"""
+    quest_hint: str = ""
     npcs_here: list[NpcPanel] = Field(default_factory=list)

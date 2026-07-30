@@ -3,6 +3,7 @@ from pathlib import Path
 from gensokyo.llm.client import OpenAiCompatibleClient
 from gensokyo.session.loop import Session
 from gensokyo.world.observation import PlayerView
+from gensokyo.world.tools import ActionResult
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,14 +30,27 @@ def render(view: PlayerView) -> str:
         lines.append("身上：" + "、".join(f"{k}×{v}" for k, v in view.inventory.items()))
     for npc in view.npcs_here:
         lines.append(
-            f"在场：{npc.name}（好感 {npc.attitude}，"
-            f"{npc.emotion_var} {npc.emotion:.2f}，{npc.mode}）"
+            f"在场：{npc.name}（好感 {npc.attitude}，{npc.emotion_var} {npc.emotion:.2f}）"
         )
-    lines.append(f"进展：{view.quest_stage}")
+        if npc.mode_hint:
+            lines.append(f"      {npc.mode_hint}")
+    lines.append(f"进展：{view.quest_hint}")
     if view.known_facts:
         lines.append("已知线索：")
         lines += [f"  · {f}" for f in view.known_facts]
     return "\n".join(lines)
+
+
+def _do(session: Session, result: ActionResult) -> None:
+    """执行结果反馈给玩家。失败必须说清原因——否则玩家分不清
+    自己是打错字了、走不通、还是东西不在这儿。"""
+    if result.ok:
+        if result.observation_delta:
+            print(f"\n{result.observation_delta}")
+        print()
+        print(render(session.view()))
+    else:
+        print(f"\n（{result.error}）")
 
 
 def main() -> None:
@@ -65,13 +79,13 @@ def main() -> None:
             print(render(session.view()))
             continue
         if raw.startswith("/go "):
-            print(render(session.go(raw[4:].strip())))
+            _do(session, session.go(raw[4:].strip()))
             continue
         if raw.startswith("/give "):
-            print(render(session.give(raw[6:].strip())))
+            _do(session, session.give(raw[6:].strip()))
             continue
         if raw.startswith("/pick "):
-            print(render(session.pick(raw[6:].strip())))
+            _do(session, session.pick(raw[6:].strip()))
             continue
 
         try:

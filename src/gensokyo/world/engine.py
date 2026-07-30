@@ -298,6 +298,21 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev], f"拿走了{self._item_name(args.item)}。")
 
+    def _mode_hint(self, npc_id: NpcId) -> str:
+        mode = self.state.npcs[npc_id].mode
+        for m in self.defs.characters[npc_id].emotion.modes:
+            if m.name == mode:
+                return m.speech_hint
+        return ""
+
+    def resolve_item(self, text: str) -> ItemId | None:
+        """把玩家输入的中文物品名或英文 id 解析成 ItemId。
+        面板显示中文，输入却只认英文 id 会把玩家训练成敲英文。"""
+        for item_id, item in self.defs.items.items():
+            if text in (item.name, item_id):
+                return item_id
+        return None
+
     def _named(self, bag: dict[ItemId, int]) -> dict[str, int]:
         return {self._item_name(item): n for item, n in bag.items()}
 
@@ -441,10 +456,11 @@ class WorldEngine:
             location_name=loc.name,
             location_description=loc.description,
             exits=[self.defs.locations[e].name for e in loc.exits],
-            inventory=dict(self.state.player.inventory),
-            items_here=dict(self.state.locations[loc_id].items),
+            inventory=self._named(self.state.player.inventory),
+            items_here=self._named(self.state.locations[loc_id].items),
             known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
             quest_stage=self.state.quest.stage.name,
+            quest_hint=STAGE_HINT[self.state.quest.stage],
             npcs_here=[
                 NpcPanel(
                     npc_id=nid,
@@ -453,6 +469,7 @@ class WorldEngine:
                     emotion_var=self.state.npcs[nid].emotion_var,
                     emotion=self.state.npcs[nid].emotion,
                     mode=self.state.npcs[nid].mode,
+                    mode_hint=self._mode_hint(nid),
                 )
                 for nid in self._npcs_here()
             ],

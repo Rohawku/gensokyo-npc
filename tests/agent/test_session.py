@@ -47,28 +47,55 @@ def test_tick_advances_after_each_player_turn() -> None:
     assert sess.engine.state.tick == 1
 
 
-def test_go_moves_player_and_returns_view() -> None:
+def test_go_moves_player_and_reports_success() -> None:
     sess = _session([])
 
-    view = sess.go("人间之里")
+    result = sess.go("人间之里")
 
-    assert view.location_name == "人间之里"
+    assert result.ok is True
+    assert sess.view().location_name == "人间之里"
 
 
-def test_go_to_unreachable_place_keeps_position() -> None:
+def test_go_to_unreachable_place_reports_why_and_costs_no_turn() -> None:
+    """失败必须有可读原因，且不推进回合——打错一个字不该让 NPC 情绪衰减一轮。"""
     sess = _session([])
 
-    view = sess.go("红魔馆地下室")
+    result = sess.go("红魔馆地下室")
 
-    assert view.location_name == "博丽神社"
+    assert result.ok is False
+    assert result.error is not None
+    assert sess.view().location_name == "博丽神社"
+    assert sess.engine.state.tick == 0
+
+
+def test_go_to_nonexistent_place_reports_why() -> None:
+    sess = _session([])
+
+    result = sess.go("雾雨魔法店x")
+
+    assert result.ok is False
+    assert "没有叫" in (result.error or "")
+    assert sess.engine.state.tick == 0
+
+
+def test_give_accepts_chinese_item_name() -> None:
+    """面板显示中文，输入却只认英文 id 会把玩家训练成敲英文。"""
+    sess = _session([])
+
+    result = sess.give("赛钱")
+
+    assert result.ok is True
+    assert sess.view().inventory == {"赛钱": 7}
 
 
 def test_give_transfers_item_and_shows_in_view() -> None:
     sess = _session([])
     sess.engine.state.player.inventory["offering_coin"] = 1
 
-    view = sess.give("offering_coin")
+    result = sess.give("offering_coin")
 
+    assert result.ok is True
+    view = sess.view()
     assert view.inventory == {}
     assert view.npcs_here[0].attitude > 0
 

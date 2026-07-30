@@ -35,7 +35,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/gensokyo/world"]
+files = ["src/gensokyo"]
 strict = true
 
 [tool.pytest.ini_options]

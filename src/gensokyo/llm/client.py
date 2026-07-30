@@ -1,5 +1,5 @@
 import os
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel
 
@@ -53,9 +53,12 @@ class OpenAiCompatibleClient:
         )
 
     def complete(self, messages: list[Msg], temperature: float = 0.8) -> str:
+        # SDK 要求 role 是字面量类型的 TypedDict，而我们的 role 是运行时字符串。
+        # 运行时等价，类型上无法收窄，故显式 cast。
+        payload = cast(Any, [{"role": m.role, "content": m.content} for m in messages])
         resp = self._client.chat.completions.create(
             model=self.model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+            messages=payload,
             temperature=temperature,
         )
         content = resp.choices[0].message.content

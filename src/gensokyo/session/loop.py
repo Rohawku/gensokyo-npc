@@ -4,11 +4,11 @@ from gensokyo.agent.npc import NpcAgent
 from gensokyo.agent.schema import NpcTurn
 from gensokyo.llm.client import LlmClient
 from gensokyo.world.engine import WorldEngine
-from gensokyo.world.ids import ItemId, LocationId, NpcId
+from gensokyo.world.ids import LocationId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.observation import PlayerView
 from gensokyo.world.state import build_initial_state
-from gensokyo.world.tools import Action
+from gensokyo.world.tools import Action, ActionResult, ErrorCode
 
 
 class Session:
@@ -43,19 +43,27 @@ class Session:
         self.engine.tick()
         return turns
 
-    def go(self, place: str) -> PlayerView:
-        target = self._location_id_by_name(place)
-        if target is not None:
-            self.engine.apply(Action(actor="player", tool="move", args={"to": target}))
+    def _act(self, action: Action) -> ActionResult:
+        """施加玩家动作。失败不推进回合——打错一个字不该让 NPC 的情绪衰减一轮。"""
+        result = self.engine.apply(action)
+        if result.ok:
             self.engine.tick()
-        return self.view()
+        return result
 
-    def give(self, item: str) -> PlayerView:
-        self.engine.apply(Action(actor="player", tool="give_item", args={"item": ItemId(item)}))
-        self.engine.tick()
-        return self.view()
+    def go(self, place: str) -> ActionResult:
+        target = self._location_id_by_name(place)
+        if target is None:
+            return ActionResult.failed(ErrorCode.NO_SUCH_EXIT, f"幻想乡没有叫「{place}」的地方。")
+        return self._act(Action(actor="player", tool="move", args={"to": target}))
 
-    def pick(self, item: str) -> PlayerView:
-        self.engine.apply(Action(actor="player", tool="take_item", args={"item": ItemId(item)}))
-        self.engine.tick()
-        return self.view()
+    def give(self, item: str) -> ActionResult:
+        target = self.engine.resolve_item(item)
+        if target is None:
+            return ActionResult.failed(ErrorCode.BAD_ARGS, f"没有叫「{item}」的东西。")
+        return self._act(Action(actor="player", tool="give_item", args={"item": target}))
+
+    def pick(self, item: str) -> ActionResult:
+        target = self.engine.resolve_item(item)
+        if target is None:
+            return ActionResult.failed(ErrorCode.BAD_ARGS, f"没有叫「{item}」的东西。")
+        return self._act(Action(actor="player", tool="take_item", args={"item": target}))
