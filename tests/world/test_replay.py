@@ -22,6 +22,11 @@ CANDIDATE_ACTIONS = [
     Action(actor="reimu", tool="take_item", args={"item": "withered_flower"}),
     Action(actor="reimu", tool="reveal_info", args={"fact": "barrier_anomaly_time"}),
     Action(actor="flandre", tool="move", args={"to": "forest_of_magic"}),
+    # 这三条把魔理沙和赛钱也纳入随机探索范围，让不变量能覆盖到
+    # 更多状态组合（跨越情绪模式边界则由下面的确定性测试专门守）。
+    Action(actor="player", tool="move", args={"to": "kirisame_magic_shop"}),
+    Action(actor="player", tool="give_item", args={"item": "offering_coin"}),
+    Action(actor="marisa", tool="ask_player", args={"question": "有事？"}),
 ]
 
 

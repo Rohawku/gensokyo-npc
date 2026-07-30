@@ -526,7 +526,8 @@ tools:
 
 knowledge:
   holds_facts: [ancient_oblivion_memory]
-  forbidden_knowledge: [modern_technology, outside_basement_events]
+  forbidden_knowledge: ["外界的科技", "地下室外面发生的事"]   # 给模型看的中文散文
+  blind_to_outside: true                                    # 信息隔离的机器开关
   dormant_memories:
     - content_key: ancient_oblivion_memory
       trigger_keys: [withered_flower, old_music_box]

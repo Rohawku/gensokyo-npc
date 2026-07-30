@@ -3,6 +3,7 @@ from pathlib import Path
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import ItemId, NpcId
 from gensokyo.world.loader import load_defs
+from gensokyo.world.rules import resolve_mode
 from gensokyo.world.state import build_initial_state
 from gensokyo.world.tools import Action, ErrorCode
 
@@ -77,3 +78,28 @@ def test_npc_gives_item_to_player() -> None:
     assert result.ok is True
     assert eng.state.player.inventory[ItemId("rare_book")] == 1
     assert reimu.inventory.get(ItemId("rare_book"), 0) == 0
+
+
+def test_emotion_and_mode_stay_consistent_through_the_engine() -> None:
+    """经由 apply(give_item) 跨越情绪模式边界后，mode 必须跟着 emotion 走。
+
+    test_rules.py 直接调 bump_emotion 验证过这层耦合，但没有测试走过
+    完整的引擎路径——一旦某个 _do_* 绕开 bump_emotion 自己改 emotion，
+    就会出现「情绪已过阈值、模式还是旧的」。
+    """
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="move", args={"to": "human_village"}))
+    eng.apply(Action(actor="player", tool="move", args={"to": "kirisame_magic_shop"}))
+    eng.state.player.inventory[COIN] = 4  # fixture 只给 2 枚，跨阈值需要 4 次
+    marisa = eng.state.npcs[NpcId("marisa")]
+    card = eng.defs.characters[NpcId("marisa")]
+    assert marisa.mode == "normal"
+
+    crossed = False
+    for _ in range(4):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": COIN}))
+        assert marisa.mode == resolve_mode(card, marisa.emotion)
+        if marisa.mode == "excited":
+            crossed = True
+
+    assert crossed, "送四次礼应当把魔理沙的热切度推过 0.75 的阈值"
