@@ -44,9 +44,10 @@ emotion:
       speech_hint: 极度兴奋，短句，重复词语，会提到"破坏"
 
 tools:
-  deny_always: [move]
+  deny_always: [move, travel_to]
   deny_reasons:
     move: 你被禁足在地下室里，出不去。
+    travel_to: 你被禁足在地下室里，哪儿也去不了。
 
 knowledge:
   holds_facts: [ancient_oblivion_memory]

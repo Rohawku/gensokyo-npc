@@ -54,7 +54,7 @@ def test_suggestion_points_at_the_source_once_clues_are_complete() -> None:
     eng.refresh_quest()
 
     away = eng.observe(NpcId("reimu")).suggestion
-    assert "无缘塚" in away and "move" in away
+    assert "无缘塚" in away and "travel_to" in away
 
     eng.state.npcs[NpcId("reimu")].location = "muenzuka"
     at_source = eng.observe(NpcId("reimu")).suggestion
@@ -90,3 +90,87 @@ def test_player_objective_falls_back_to_the_stage_text() -> None:
     eng.state.player.location = "muenzuka"
 
     assert eng.observe_player().objective == eng.defs.stages[QuestStage.S3_SOURCE.name].objective
+
+
+def test_npc_travels_multi_hop_by_shortest_path() -> None:
+    """让 8B 模型看着出口清单自己规划两跳路径不可靠——实测它只试一步、
+    失败就放弃，结局因此永远触发不了。地图是引擎的知识。"""
+    eng = _engine()
+    assert eng.state.npcs[NpcId("marisa")].location == "kirisame_magic_shop"
+
+    result = eng.apply(Action(actor="marisa", tool="travel_to", args={"destination": "muenzuka"}))
+
+    assert result.ok is True
+    assert eng.state.npcs[NpcId("marisa")].location == "muenzuka"
+    # 途经的每一跳都留下事件，回放能重现完整路线
+    hops = [ev.payload["to"] for ev in result.events]
+    assert hops == ["human_village", "muenzuka"]
+
+
+def test_flandre_cannot_travel_either() -> None:
+    """新增工具默认发放给所有人是个陷阱：travel_to 若不加进她的禁足名单，
+    她能绕过 move 直接飞出地下室。"""
+    eng = _engine()
+
+    result = eng.apply(Action(actor="flandre", tool="travel_to", args={"destination": "muenzuka"}))
+
+    assert result.ok is False
+    assert "禁足" in (result.error or "")
+    assert eng.state.npcs[NpcId("flandre")].location == "scarlet_devil_basement"
+
+
+def test_player_cannot_travel() -> None:
+    eng = _engine()
+
+    result = eng.apply(Action(actor="player", tool="travel_to", args={"destination": "muenzuka"}))
+
+    assert result.ok is False
+    assert eng.state.player.location == "hakurei_shrine"
+
+
+def test_travel_to_nonexistent_place_fails_cleanly() -> None:
+    eng = _engine()
+
+    result = eng.apply(
+        Action(actor="marisa", tool="travel_to", args={"destination": "gensokyo_moon"})
+    )
+
+    assert result.ok is False
+    assert eng.state.npcs[NpcId("marisa")].location == "kirisame_magic_shop"
+
+
+def test_travel_to_current_location_is_a_noop() -> None:
+    eng = _engine()
+
+    result = eng.apply(
+        Action(actor="marisa", tool="travel_to", args={"destination": "kirisame_magic_shop"})
+    )
+
+    assert result.ok is True
+    assert result.events == []
+
+
+def test_objective_says_to_act_once_the_finisher_is_at_the_source() -> None:
+    eng = _engine()
+    eng.state.player.known_facts.update(CLUES)
+    eng.state.player.location = "muenzuka"
+    eng.apply(Action(actor="marisa", tool="travel_to", args={"destination": "muenzuka"}))
+    eng.refresh_quest()
+
+    assert "让她动手" in eng.observe_player().objective
+
+
+def test_ending_tool_result_does_not_duplicate_the_ending_prose() -> None:
+    """结局正文由结局块打印。工具结果里再带一遍，玩家会看两次。"""
+    eng = _engine()
+    eng.state.player.known_facts.update(CLUES)
+    eng.state.player.location = "muenzuka"
+    eng.state.npcs[NpcId("marisa")].location = "muenzuka"
+    eng.refresh_quest()
+
+    result = eng.apply(Action(actor="marisa", tool="use_spellcard", args={"name": "恋符"}))
+
+    assert result.ok is True
+    assert "八卦炉" not in result.observation_delta
+    assert "动手了" in result.observation_delta
+    assert "八卦炉" in eng.observe_player().ending_text

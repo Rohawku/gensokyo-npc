@@ -19,7 +19,7 @@ def test_load_defs_from_repo() -> None:
     assert set(defs.characters) == {NpcId("reimu"), NpcId("marisa"), NpcId("flandre")}
     assert len(defs.locations) == 7
     assert defs.locations[LocationId("muenzuka")].items == {"withered_flower": 1}
-    assert defs.characters[NpcId("flandre")].tools.deny_always == ["move"]
+    assert defs.characters[NpcId("flandre")].tools.deny_always == ["move", "travel_to"]
 
 
 def test_clue_facts_are_exactly_three() -> None:

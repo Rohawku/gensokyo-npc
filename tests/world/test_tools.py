@@ -16,6 +16,7 @@ def test_registry_contains_expected_tools() -> None:
     assert set(TOOL_REGISTRY) == {
         "say",
         "move",
+        "travel_to",
         "give_item",
         "take_item",
         "reveal_info",

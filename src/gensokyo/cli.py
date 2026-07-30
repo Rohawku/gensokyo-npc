@@ -199,9 +199,10 @@ def main() -> None:
         for turn in turns:
             # utterance 已经逐字流到屏幕上了，不再重复打印。
             for result in turn.tool_results:
-                mark = "✓" if result.ok else "✗"
                 detail = result.observation_delta if result.ok else result.error
-                print(f"  {mark} {detail}")
+                if not detail:
+                    continue
+                print(f"  {'✓' if result.ok else '✗'} {detail}")
         print()
         print(render(session.view()))
 

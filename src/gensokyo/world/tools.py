@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     TOOL_DENIED = "tool_denied"
     NOT_CO_LOCATED = "not_co_located"
     NO_SUCH_EXIT = "no_such_exit"
+    UNREACHABLE = "unreachable"
     INSUFFICIENT_ITEM = "insufficient_item"
     NOT_FACT_HOLDER = "not_fact_holder"
     REVEAL_CONDITION_UNMET = "reveal_condition_unmet"
@@ -27,6 +28,10 @@ class SayArgs(BaseModel):
 
 class MoveArgs(BaseModel):
     to: LocationId
+
+
+class TravelToArgs(BaseModel):
+    destination: LocationId
 
 
 class GiveItemArgs(BaseModel):
@@ -73,6 +78,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
     for spec in [
         ToolSpec(name="say", description="说话。", args_model=SayArgs),
         ToolSpec(name="move", description="移动到相邻地点。", args_model=MoveArgs),
+        ToolSpec(
+            name="travel_to",
+            description="前往任意地点，路上要走几步不用你操心。",
+            args_model=TravelToArgs,
+        ),
         ToolSpec(name="give_item", description="把自己的物品交给对方。", args_model=GiveItemArgs),
         ToolSpec(name="take_item", description="从对方手里拿走物品。", args_model=TakeItemArgs),
         ToolSpec(

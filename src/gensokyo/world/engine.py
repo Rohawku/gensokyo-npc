@@ -1,3 +1,4 @@
+from collections import deque
 from collections.abc import Callable
 from typing import Any
 
@@ -37,6 +38,7 @@ from gensokyo.world.tools import (
     SayArgs,
     TakeItemArgs,
     ToolSpec,
+    TravelToArgs,
     UseSpellcardArgs,
     parse_args,
 )
@@ -223,6 +225,7 @@ class WorldEngine:
         return {
             "say": self._do_say,
             "move": self._do_move,
+            "travel_to": self._do_travel_to,
             "give_item": self._do_give_item,
             "take_item": self._do_take_item,
             "reveal_info": self._do_reveal_info,
@@ -256,6 +259,51 @@ class WorldEngine:
 
         ev = self._emit(kind, action.actor, {"tool": "move", "to": args.to})
         return ActionResult.succeeded([ev], f"来到了{self.defs.locations[args.to].name}。")
+
+    def _path(self, start: LocationId, goal: LocationId) -> list[LocationId] | None:
+        """出口图上的最短路。地图是引擎的知识，不该让一个 8B 模型
+        看着出口清单自己规划多跳路径——实测它只会试一步，失败就放弃。"""
+        if start == goal:
+            return []
+        seen = {start}
+        queue: deque[tuple[LocationId, list[LocationId]]] = deque([(start, [])])
+        while queue:
+            here, path = queue.popleft()
+            for nxt in self.defs.locations[here].exits:
+                if nxt in seen:
+                    continue
+                if nxt == goal:
+                    return [*path, nxt]
+                seen.add(nxt)
+                queue.append((nxt, [*path, nxt]))
+        return None
+
+    def _do_travel_to(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, TravelToArgs)
+        if action.actor == "player":
+            return ActionResult.failed(
+                ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用，你得自己一步步走。"
+            )
+        if args.destination not in self.defs.locations:
+            return ActionResult.failed(
+                ErrorCode.NO_SUCH_EXIT, f"幻想乡没有叫「{args.destination}」的地方。"
+            )
+
+        npc_id = NpcId(action.actor)
+        npc = self.state.npcs[npc_id]
+        path = self._path(npc.location, args.destination)
+        if path is None:
+            return ActionResult.failed(ErrorCode.UNREACHABLE, "从这儿过不去。")
+        if not path:
+            return ActionResult.succeeded([], "你已经在那儿了。")
+
+        events = []
+        for hop in path:
+            npc.location = hop
+            events.append(
+                self._emit(EventKind.NPC_ACTION, action.actor, {"tool": "move", "to": hop})
+            )
+        return ActionResult.succeeded(events, f"去了{self.defs.locations[args.destination].name}。")
 
     def _npcs_here(self) -> list[NpcId]:
         here = self.state.player.location
@@ -433,6 +481,7 @@ class WorldEngine:
 
         # 剧情的最后一步由 NPC 自己走完：玩家说服她来无缘塚，她动手解决。
         npc_id = NpcId(action.actor)
+        card_name = self.defs.characters[npc_id].name
         ending = self.defs.ending_by(npc_id)
         if (
             ending is not None
@@ -440,7 +489,8 @@ class WorldEngine:
             and self.state.quest.stage >= QuestStage.S3_SOURCE
         ):
             self._finish(ending.id)
-            return ActionResult.succeeded([ev], ending.text.strip())
+            # 结局正文交给结局块打印，这里只报机械结果，否则玩家会看两遍。
+            return ActionResult.succeeded([ev], f"{card_name}动手了。")
 
         return ActionResult.succeeded([ev], f"发动了符卡「{args.name}」。")
 
@@ -544,8 +594,8 @@ class WorldEngine:
                 parts.append("你就在无缘塚。要动手就用 use_spellcard。")
             else:
                 parts.append(
-                    "线索已经凑齐了，源头在无缘塚。来访者要是叫你一起去，就用 move 过去"
-                    "（从这里未必一步到位，可以连着走）。"
+                    "线索已经凑齐了，源头在无缘塚。来访者要是叫你一起去，就用 travel_to "
+                    "（destination 填 muenzuka）直接过去，路上几步不用你操心。"
                 )
 
         return "".join(parts)
@@ -568,6 +618,16 @@ class WorldEngine:
         ]
         if openers:
             return f"{'、'.join(openers)}已经愿意开口了——直接问她无缘塚的事。"
+
+        if self.state.quest.stage == QuestStage.S3_SOURCE:
+            finishers = [
+                self.defs.characters[nid].name
+                for nid in self._npcs_here()
+                if self.defs.ending_by(nid) is not None
+            ]
+            if finishers and self.state.player.location == ANOMALY_SITE:
+                return f"{'、'.join(finishers)}就在这儿——让她动手。"
+
         return base
 
     def _oblivion_warning(self) -> str:
