@@ -8,11 +8,11 @@ from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
-    EMOTION_DELTA,
     apply_emotion_decay,
     bump_attitude,
     bump_emotion,
     can_reveal,
+    emotion_delta_for,
 )
 from gensokyo.world.state import WorldState
 from gensokyo.world.tools import (
@@ -103,11 +103,17 @@ class WorldEngine:
 
     def available_tools(self, npc_id: NpcId) -> list[ToolSpec]:
         """情绪状态机的落点：模式变化会真的改变 NPC 能做什么，
-        而不是在 prompt 里描述一句。"""
+        而不是在 prompt 里描述一句。
+
+        基线只含非受限工具；受限工具（如 break_item）必须由当前模式的
+        tools_allow 显式解锁。永久禁用在最后再减一次，优先于情绪解锁——
+        否则写错一行 YAML 就能让芙兰逃出地下室。
+        """
         card = self.defs.characters[npc_id]
         npc = self.state.npcs[npc_id]
 
-        allowed = set(TOOL_REGISTRY) - set(card.tools.deny_always)
+        allowed = {name for name, spec in TOOL_REGISTRY.items() if not spec.restricted}
+        allowed -= set(card.tools.deny_always)
         for mode in card.emotion.modes:
             if mode.name != npc.mode:
                 continue
@@ -201,7 +207,11 @@ class WorldEngine:
             self._push_items(npc.inventory, args.item, args.count)
             npc.received_items.add(args.item)
             bump_attitude(npc, ATTITUDE_DELTA["player_gave_item"])
-            bump_emotion(npc, self.defs.characters[target], EMOTION_DELTA["player_gave_item"])
+            bump_emotion(
+                npc,
+                self.defs.characters[target],
+                emotion_delta_for(self.defs.characters[target], "player_gave_item"),
+            )
             ev = self._emit(
                 EventKind.PLAYER_ACTION,
                 "player",

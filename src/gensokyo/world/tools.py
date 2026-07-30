@@ -59,6 +59,10 @@ class ToolSpec(BaseModel):
     name: str
     description: str
     args_model: type[BaseModel]
+    restricted: bool = False
+    """受限工具不默认发放给任何 NPC，只能由角色卡的某个情绪模式用
+    tools_allow 显式解锁。若默认全开，每新增一个工具都会自动授予所有
+    角色，除非有人记得去 deny——那个默认方向是错的。"""
 
     def json_schema(self) -> dict[str, Any]:
         return self.args_model.model_json_schema()
@@ -82,7 +86,12 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             description="发动符卡，以弹幕决斗解决冲突。",
             args_model=UseSpellcardArgs,
         ),
-        ToolSpec(name="break_item", description="破坏一件物品。", args_model=BreakItemArgs),
+        ToolSpec(
+            name="break_item",
+            description="破坏一件物品。",
+            args_model=BreakItemArgs,
+            restricted=True,
+        ),
     ]
 }
 

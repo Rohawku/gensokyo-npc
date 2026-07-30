@@ -77,3 +77,48 @@ def test_player_can_pick_up_location_item_via_take() -> None:
     assert result.ok is True
     assert eng.state.player.inventory[ItemId("withered_flower")] == 1
     assert eng.state.locations[LocationId("muenzuka")].items == {}
+
+
+def test_break_item_is_restricted_to_flandre() -> None:
+    """受限工具不默认发放。灵梦和魔理沙的任何模式都不该出现 break_item——
+    否则每新增一个工具就会自动授予所有角色。"""
+    eng = _engine()
+
+    for npc_id in (NpcId("reimu"), NpcId("marisa")):
+        card = eng.defs.characters[npc_id]
+        for mode in card.emotion.modes:
+            eng.state.npcs[npc_id].mode = mode.name
+            names = {spec.name for spec in eng.available_tools(npc_id)}
+            assert "break_item" not in names, f"{npc_id} 在 {mode.name} 模式下拿到了 break_item"
+
+
+def test_gift_lowers_reimus_annoyance_but_raises_flandres_excitement() -> None:
+    """同一事件的情绪方向按角色卡走：灵梦爱钱，收到赛钱该消气；
+    芙兰收到东西该更兴奋。用全局表会让灵梦在玩家讨好她时越来越烦。"""
+    eng = _engine()
+    eng.state.player.inventory[ItemId("offering_coin")] = 4
+    reimu_before = eng.state.npcs[NpcId("reimu")].emotion
+
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    assert eng.state.npcs[NpcId("reimu")].emotion < reimu_before
+
+    eng.state.player.location = eng.state.npcs[NpcId("flandre")].location
+    flandre_before = eng.state.npcs[NpcId("flandre")].emotion
+
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    assert eng.state.npcs[NpcId("flandre")].emotion > flandre_before
+
+
+def test_reimu_stays_out_of_irritated_while_being_paid() -> None:
+    """通关必经之路：送 4 次赛钱打开线索门槛。
+    这个过程不该把她推进 irritated（那会禁掉 ask_player，恰在给玩家奖励时让对话变差）。"""
+    eng = _engine()
+
+    for _ in range(4):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    reimu = eng.state.npcs[NpcId("reimu")]
+    assert reimu.attitude >= 24
+    assert reimu.mode == "normal"

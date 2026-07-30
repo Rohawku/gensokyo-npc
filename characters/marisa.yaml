@@ -30,6 +30,8 @@ emotion:
   variable: eagerness
   initial: 0.3
   decay_per_tick: 0.02
+  event_deltas:
+    player_gave_item: 0.15
   modes:
     - name: normal
       range: [0.0, 0.75]

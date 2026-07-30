@@ -11,11 +11,18 @@ ATTITUDE_DELTA: dict[str, int] = {
     "player_broke_promise": -12,
 }
 
-# 玩家行为对 NPC 情绪变量的影响。
+# 情绪增量的兜底值。角色卡的 emotion.event_deltas 若给出同名条目则优先，
+# 因为同一事件对不同角色的情绪方向可能相反。
 EMOTION_DELTA: dict[str, float] = {
     "player_gave_item": 0.18,
     "player_stayed_and_talked": 0.05,
 }
+
+
+def emotion_delta_for(card: CharacterCard, event: str) -> float:
+    if event in card.emotion.event_deltas:
+        return card.emotion.event_deltas[event]
+    return EMOTION_DELTA.get(event, 0.0)
 
 
 def resolve_mode(card: CharacterCard, emotion: float) -> str:

@@ -30,6 +30,9 @@ emotion:
   variable: annoyance
   initial: 0.1
   decay_per_tick: 0.03
+  event_deltas:
+    # 灵梦爱钱。收到赛钱让她没那么烦，而不是更烦。
+    player_gave_item: -0.10
   modes:
     - name: normal
       range: [0.0, 0.6]

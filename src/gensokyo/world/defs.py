@@ -52,6 +52,9 @@ class EmotionCfg(StrictModel):
     initial: float = 0.0
     decay_per_tick: float = 0.0
     modes: list[EmotionMode]
+    event_deltas: dict[str, float] = Field(default_factory=dict)
+    """同一事件对不同角色的情绪影响方向不同：收到赛钱让灵梦「没那么烦」，
+    却让芙兰「更兴奋」。所以增量必须按角色配置，不能用全局表。"""
 
 
 class ToolsCfg(StrictModel):

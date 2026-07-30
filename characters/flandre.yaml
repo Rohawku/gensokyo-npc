@@ -30,6 +30,8 @@ emotion:
   variable: excitement
   initial: 0.2
   decay_per_tick: 0.02
+  event_deltas:
+    player_gave_item: 0.18
   modes:
     - name: calm
       range: [0.0, 0.7]
