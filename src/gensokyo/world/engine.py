@@ -5,16 +5,24 @@ from pydantic import BaseModel, ValidationError
 
 from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event, EventKind
-from gensokyo.world.ids import EventId, LocationId, NpcId
-from gensokyo.world.rules import apply_emotion_decay
+from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
+from gensokyo.world.rules import (
+    ATTITUDE_DELTA,
+    EMOTION_DELTA,
+    apply_emotion_decay,
+    bump_attitude,
+    bump_emotion,
+)
 from gensokyo.world.state import WorldState
 from gensokyo.world.tools import (
     TOOL_REGISTRY,
     Action,
     ActionResult,
     ErrorCode,
+    GiveItemArgs,
     MoveArgs,
     SayArgs,
+    TakeItemArgs,
     ToolSpec,
     parse_args,
 )
@@ -118,7 +126,12 @@ class WorldEngine:
         return ActionResult.failed(ErrorCode.TOOL_DENIED, reason)
 
     def _handlers(self) -> dict[str, ToolHandler]:
-        return {"say": self._do_say, "move": self._do_move}
+        return {
+            "say": self._do_say,
+            "move": self._do_move,
+            "give_item": self._do_give_item,
+            "take_item": self._do_take_item,
+        }
 
     # ---------- 各工具实现 ----------
 
@@ -145,3 +158,87 @@ class WorldEngine:
 
         ev = self._emit(kind, action.actor, {"tool": "move", "to": args.to})
         return ActionResult.succeeded([ev], f"来到了{self.defs.locations[args.to].name}。")
+
+    def _npcs_here(self) -> list[NpcId]:
+        here = self.state.player.location
+        return [nid for nid, npc in self.state.npcs.items() if npc.location == here]
+
+    @staticmethod
+    def _pop_items(bag: dict[ItemId, int], item: ItemId, count: int) -> bool:
+        if bag.get(item, 0) < count:
+            return False
+        bag[item] -= count
+        if bag[item] == 0:
+            del bag[item]
+        return True
+
+    @staticmethod
+    def _push_items(bag: dict[ItemId, int], item: ItemId, count: int) -> None:
+        bag[item] = bag.get(item, 0) + count
+
+    def _do_give_item(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, GiveItemArgs)
+        if action.actor == "player":
+            present = self._npcs_here()
+            if not present:
+                return ActionResult.failed(ErrorCode.NOT_CO_LOCATED, "这里没有人可以给。")
+            target = present[0]
+            npc = self.state.npcs[target]
+            if not self._pop_items(self.state.player.inventory, args.item, args.count):
+                return ActionResult.failed(
+                    ErrorCode.INSUFFICIENT_ITEM,
+                    f"你身上没有那么多{self._item_name(args.item)}。",
+                )
+            self._push_items(npc.inventory, args.item, args.count)
+            npc.received_items.add(args.item)
+            bump_attitude(npc, ATTITUDE_DELTA["player_gave_item"])
+            bump_emotion(npc, self.defs.characters[target], EMOTION_DELTA["player_gave_item"])
+            ev = self._emit(
+                EventKind.PLAYER_ACTION,
+                "player",
+                {"tool": "give_item", "item": args.item, "count": args.count, "to": target},
+            )
+            return ActionResult.succeeded(
+                [ev],
+                f"把{args.count}个{self._item_name(args.item)}"
+                f"交给了{self.defs.characters[target].name}。",
+            )
+
+        npc_id = NpcId(action.actor)
+        npc = self.state.npcs[npc_id]
+        if not self._pop_items(npc.inventory, args.item, args.count):
+            return ActionResult.failed(
+                ErrorCode.INSUFFICIENT_ITEM, f"你手上没有那么多{self._item_name(args.item)}。"
+            )
+        self._push_items(self.state.player.inventory, args.item, args.count)
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "give_item", "item": args.item, "count": args.count, "to": "player"},
+        )
+        return ActionResult.succeeded([ev], f"给出了{self._item_name(args.item)}。")
+
+    def _do_take_item(self, action: Action, args: BaseModel) -> ActionResult:
+        assert isinstance(args, TakeItemArgs)
+        if action.actor == "player":
+            return ActionResult.failed(ErrorCode.TOOL_DENIED, "直接抢不合规矩，试着开口要。")
+        npc_id = NpcId(action.actor)
+        npc = self.state.npcs[npc_id]
+        if npc.location != self.state.player.location:
+            return ActionResult.failed(ErrorCode.NOT_CO_LOCATED, "对方不在这里。")
+        if not self._pop_items(self.state.player.inventory, args.item, args.count):
+            return ActionResult.failed(
+                ErrorCode.INSUFFICIENT_ITEM, f"对方身上没有那么多{self._item_name(args.item)}。"
+            )
+        self._push_items(npc.inventory, args.item, args.count)
+        bump_attitude(npc, ATTITUDE_DELTA["player_took_item"])
+        ev = self._emit(
+            EventKind.NPC_ACTION,
+            action.actor,
+            {"tool": "take_item", "item": args.item, "count": args.count},
+        )
+        return ActionResult.succeeded([ev], f"拿走了{self._item_name(args.item)}。")
+
+    def _item_name(self, item: ItemId) -> str:
+        known = self.defs.items.get(item)
+        return known.name if known else str(item)
