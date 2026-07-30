@@ -43,6 +43,8 @@ emotion:
 
 tools:
   deny_always: [move]
+  deny_reasons:
+    move: 你被禁足在地下室里，出不去。
 
 knowledge:
   holds_facts: [ancient_oblivion_memory]

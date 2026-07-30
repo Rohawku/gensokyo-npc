@@ -56,6 +56,7 @@ class EmotionCfg(StrictModel):
 
 class ToolsCfg(StrictModel):
     deny_always: list[str] = Field(default_factory=list)
+    deny_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 class DormantMemoryCfg(StrictModel):
