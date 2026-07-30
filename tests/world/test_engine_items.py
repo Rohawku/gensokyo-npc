@@ -51,7 +51,10 @@ def test_giving_when_no_npc_present_fails() -> None:
     assert result.error_code is ErrorCode.NOT_CO_LOCATED
 
 
-def test_npc_takes_item_lowers_attitude_of_that_npc() -> None:
+def test_npc_taking_players_item_worsens_the_relationship() -> None:
+    """态度是单一的「关系亲疏」轴。NPC 不问一声就从玩家手里拿走东西，
+    关系该变差——ATTITUDE_DELTA["npc_took_item"] 作用在这条 NPC 分支上，
+    而不是「玩家拿走 NPC 的东西」（那条路径不存在）。"""
     eng = _engine()
     reimu = eng.state.npcs[NpcId("reimu")]
     before = reimu.attitude

@@ -4,18 +4,19 @@ from gensokyo.world.state import NpcState
 ATTITUDE_MIN = -100
 ATTITUDE_MAX = 100
 
-# 玩家行为对 NPC 态度的影响。刻意做成表驱动，调平衡不用改逻辑。
+# 事件对 NPC 态度的影响。刻意做成表驱动，调平衡不用改逻辑。
+# 本项目只有一个态度轴，语义是「关系亲疏」：NPC 不问一声就从玩家手里
+# 拿走东西，关系自然变差。键名按「谁做了这件事」命名，别按「谁受影响」——
+# 前者才对得上引擎里真正使用它的那个分支。
 ATTITUDE_DELTA: dict[str, int] = {
     "player_gave_item": 6,
-    "player_took_item": -8,
-    "player_broke_promise": -12,
+    "npc_took_item": -8,
 }
 
 # 情绪增量的兜底值。角色卡的 emotion.event_deltas 若给出同名条目则优先，
 # 因为同一事件对不同角色的情绪方向可能相反。
 EMOTION_DELTA: dict[str, float] = {
     "player_gave_item": 0.18,
-    "player_stayed_and_talked": 0.05,
 }
 
 

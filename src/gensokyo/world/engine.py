@@ -290,7 +290,7 @@ class WorldEngine:
                 ErrorCode.INSUFFICIENT_ITEM, f"对方身上没有那么多{self._item_name(args.item)}。"
             )
         self._push_items(npc.inventory, args.item, args.count)
-        bump_attitude(npc, ATTITUDE_DELTA["player_took_item"])
+        bump_attitude(npc, ATTITUDE_DELTA["npc_took_item"])
         ev = self._emit(
             EventKind.NPC_ACTION,
             action.actor,
