@@ -1,6 +1,6 @@
-# 墟镇 · 工程框架设计
+# 東方忘却抄 · 工程框架设计
 
-**配套文档**：`2026-07-30-hollowtown-npc-design.md`（设计与玩法）
+**配套文档**：[`docs/design.md`](design.md)（设计与玩法）
 **本文范围**：代码结构、模块契约、数据流、配置格式、技术栈、测试与仓库工程化
 **日期**：2026-07-30
 
@@ -65,13 +65,15 @@
 
 ## 2. 目录结构
 
+标 `（W2）` 的条目**尚未实现**，属 W2 及之后的规划；未标记的即当前仓库里真实存在的文件。
+
 ```
 gensokyo-npc/
 ├── README.md                    # 门面：截图/GIF + 30 秒说明 + 快速开始
 ├── LICENSE                      # 代码 MIT
 ├── NOTICE.md                    # 东方二创声明（遵循上海爱丽丝幻乐团准则）
 ├── pyproject.toml               # uv / hatch，依赖与工具配置
-├── docker-compose.yml           # postgres + pgvector 一键起
+├── docker-compose.yml           # postgres + pgvector 一键起（W2）
 ├── .env.example
 ├── Makefile                     # make dev / make test / make play
 │
@@ -87,31 +89,31 @@ gensokyo-npc/
 │   │   └── loader.py            # 从 scenario/ 与 characters/ 载入定义
 │   │
 │   ├── memory/
-│   │   ├── models.py            # MemoryItem / MemoryTier
-│   │   ├── store.py             # MemoryStore Protocol + Postgres/InMemory 实现
-│   │   ├── writer.py            # Event → MemoryItem，salience 计算
-│   │   ├── retriever.py         # 四路信号融合检索
-│   │   ├── decay.py             # 三级降级（活跃/压缩/沉睡）
-│   │   └── reflect.py           # Semantic 层归纳
+│   │   ├── models.py            # MemoryItem / MemoryTier（W2）
+│   │   ├── store.py             # MemoryStore Protocol + Postgres/InMemory 实现（W2）
+│   │   ├── writer.py            # Event → MemoryItem，salience 计算（W2）
+│   │   ├── retriever.py         # 四路信号融合检索（W2）
+│   │   ├── decay.py             # 三级降级（活跃/压缩/沉睡）（W2）
+│   │   └── reflect.py           # Semantic 层归纳（W2）
 │   │
 │   ├── agent/
 │   │   ├── schema.py            # NpcTurn 输出契约
-│   │   ├── persona.py           # 角色卡载入与 prompt 片段渲染
+│   │   ├── persona.py           # 角色卡载入与 prompt 片段渲染（W2）
 │   │   ├── prompt.py            # prompt 组装（模板在 prompts/）
 │   │   ├── policy.py            # ReAct 循环、工具调用、失败自愈
 │   │   └── npc.py               # NpcAgent：编排 persona/memory/state/policy
 │   │
 │   ├── llm/
 │   │   ├── client.py            # 统一接口（OpenAI 兼容：vLLM 本地 / 远程 API）
-│   │   ├── embedding.py         # 向量化
-│   │   └── replay.py            # 录制/回放，供测试用
+│   │   ├── embedding.py         # 向量化（W2）
+│   │   └── replay.py            # 录制/回放，供测试用（W2）
 │   │
 │   ├── session/
 │   │   ├── loop.py              # 一个回合的编排
 │   │   ├── save.py              # 存档/读档 = event_log 序列化
-│   │   └── view.py              # 构造玩家视图（右栏面板数据）
+│   │   └── view.py              # 构造玩家视图（右栏面板数据）（W2）
 │   │
-│   ├── testkit/
+│   ├── testkit/                 # （W2）
 │   │   ├── player_sim.py        # 四种玩家人格
 │   │   ├── probes.py            # 从 event_log 自动生成记忆探针
 │   │   ├── metrics/
@@ -121,7 +123,7 @@ gensokyo-npc/
 │   │   ├── anchors/             # 60 个 anchor 场景（YAML）
 │   │   └── report.py            # 生成回归报告
 │   │
-│   └── web/
+│   └── web/                     # （W2）
 │       ├── server.py            # FastAPI：SSE 流式对话 + 状态面板
 │       ├── templates/           # Jinja2
 │       └── static/              # HTMX + CSS
@@ -134,23 +136,23 @@ gensokyo-npc/
 │   ├── locations.yaml
 │   ├── items.yaml
 │   ├── facts.yaml
-│   └── quest.yaml
+│   └── quest.yaml               # （W2）阶段推导目前写在 world/quest.py 里
 ├── prompts/                     # prompt 模板，与代码分离便于迭代
-│   ├── npc_system.jinja
+│   ├── npc_system.jinja         # （W2）系统提示目前在 agent/prompt.py 里拼
 │   ├── npc_turn.jinja
-│   ├── reflect.jinja
-│   └── judge_*.jinja
+│   ├── reflect.jinja            # （W2）
+│   └── judge_*.jinja            # （W2）
 │
 ├── tests/
 │   ├── world/                   # 纯单测，无 LLM，秒级
-│   ├── memory/                  # stub embedding，无 LLM
+│   ├── memory/                  # stub embedding，无 LLM（W2）
 │   ├── agent/                   # LLM 回放测试
-│   └── e2e/                     # player_sim 驱动
+│   └── e2e/                     # player_sim 驱动（W2）
 │
 └── docs/
     ├── design.md                # 设计与玩法（配套文档）
     ├── architecture.md          # 本文
-    └── screenshots/
+    └── screenshots/             # （W2）
 ```
 
 **为什么 `characters/` 和 `scenario/` 在 `src/` 外面**：它们是内容不是代码。调平衡、加第四个 NPC、改剧情，都不应该碰 Python 文件。这条边界一旦模糊，后面每次调角色都会变成改代码，很快就没人敢动了。
@@ -577,13 +579,13 @@ behavior_baseline:                      # 行为一致性指标的基线
 | Web 后端 | FastAPI + SSE | 流式输出 NPC 回复，状态面板增量推送 |
 | Web 前端 | Jinja2 + HTMX + 少量 CSS | 无构建步骤、无 npm、无前端框架心智负担 |
 | 测试 | pytest + pytest-asyncio | — |
-| 类型检查 | mypy strict（仅 `world/` 与 `memory/`） | 内核严格，上层宽松 |
+| 类型检查 | mypy strict（覆盖整个 `src/gensokyo`） | 内核与上层同标准，越界处用显式 cast |
 | 格式化 | ruff | 一个工具搞定 lint + format |
-| CI | GitHub Actions | 跑 `world/` 与 `memory/` 单测 + ruff + mypy |
+| CI | GitHub Actions | 跑全量单测 + ruff check + ruff format --check + mypy |
 
 **前端选 HTMX 而不是 React**：这个项目的前端复杂度是「双栏、SSE 流式追加消息、面板数值更新」，HTMX 完全覆盖，且省掉 node_modules、构建配置、状态管理这一整套。对一个后端为主的项目来说，引入前端工具链的成本远大于收益。
 
-**mypy strict 只开在 `world/` 和 `memory/`**：这两层是确定性内核，类型错误会变成难查的玩法 bug，值得严格。`agent/` 层大量处理 LLM 的非结构化输出，strict 会带来很多无意义的 `cast`。
+**mypy strict 覆盖整个 `src/gensokyo`**：原计划只在 `world/` 和 `memory/` 开 strict、上层宽松，实际做下来上层的成本远低于预期——`agent/` 处理 LLM 非结构化输出的地方集中在解析层，几处 `assert isinstance` 就够了，没有出现预想中的 `cast` 泛滥。于是统一开到全包，边界更清楚，也不用记住哪个目录是宽松的。
 
 ---
 
