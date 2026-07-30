@@ -392,6 +392,10 @@ class WorldEngine:
                 ErrorCode.INSUFFICIENT_ITEM, f"对方身上没有那么多{self._item_name(args.item)}。"
             )
         self._push_items(npc.inventory, args.item, args.count)
+        # 抢来的也算收到过。不记的话交易门槛会永久打不开而东西已经没了——
+        # 魔理沙的 take_item 行为基线是全场最高的 0.30，她自己抢走珍稀魔法书
+        # 就会把第二条线索锁死。
+        npc.received_items.add(args.item)
         bump_attitude(npc, ATTITUDE_DELTA["npc_took_item"])
         ev = self._emit(
             EventKind.NPC_ACTION,
@@ -603,18 +607,22 @@ class WorldEngine:
     def _stage(self) -> StageDef:
         return self.defs.stages[self.state.quest.stage.name]
 
+    def _will_talk(self, npc_id: NpcId) -> bool:
+        """她现在是否有话可说。机器可读，别让调用方去匹配 objective 的中文
+        文案——那是「error 与 error_code 分家」那条教训在面板层的重现。"""
+        npc = self.state.npcs[npc_id]
+        return any(
+            fid not in npc.revealed_facts
+            and can_reveal(npc, self.defs.facts[fid].reveal_conditions)
+            for fid in npc.holds_facts
+        )
+
     def _player_objective(self) -> str:
         """玩家可见的当前目标。门槛一开就要变，否则玩家会一直投赛钱
         而不知道该开口问了。"""
         base = self._stage().objective
         openers = [
-            self.defs.characters[nid].name
-            for nid in self._npcs_here()
-            if any(
-                fid not in self.state.npcs[nid].revealed_facts
-                and can_reveal(self.state.npcs[nid], self.defs.facts[fid].reveal_conditions)
-                for fid in self.state.npcs[nid].holds_facts
-            )
+            self.defs.characters[nid].name for nid in self._npcs_here() if self._will_talk(nid)
         ]
         if openers:
             return f"{'、'.join(openers)}已经愿意开口了——直接问她无缘塚的事。"
@@ -651,6 +659,7 @@ class WorldEngine:
             inventory=self._named(self.state.player.inventory),
             items_here=self._named(self.state.locations[loc_id].items),
             known_facts=[self.defs.facts[f].content for f in sorted(self.state.player.known_facts)],
+            known_fact_ids=sorted(self.state.player.known_facts),
             quest_stage=self.state.quest.stage.name,
             quest_hint=self._stage().hint,
             objective=self._player_objective(),
@@ -666,6 +675,7 @@ class WorldEngine:
                     emotion=self.state.npcs[nid].emotion,
                     mode=self.state.npcs[nid].mode,
                     mode_hint=self._mode_hint(nid),
+                    will_talk=self._will_talk(nid),
                 )
                 for nid in self._npcs_here()
             ],

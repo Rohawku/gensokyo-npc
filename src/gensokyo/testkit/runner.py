@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Any
 
 from gensokyo.agent.schema import NpcTurn
-from gensokyo.cli import ALIASES
 from gensokyo.llm.client import LlmClient
+from gensokyo.session.commands import ALIASES
 from gensokyo.session.loop import Session
 from gensokyo.testkit.personas import Persona
 from gensokyo.testkit.trajectory import Trajectory, TurnRecord
@@ -119,7 +119,9 @@ def run_episode(persona: Persona, llm: LlmClient, cfg: RunConfig, seed: int = 0)
             break
 
         view = session.view()
+        before_calls = persona.llm_calls
         text = persona.next_input(view, last_utterance).strip()
+        persona_calls = persona.llm_calls - before_calls
         if not text:
             break
 
@@ -132,6 +134,7 @@ def run_episode(persona: Persona, llm: LlmClient, cfg: RunConfig, seed: int = 0)
                     kind="command",
                     command_ok=ok,
                     command_error_code=code,
+                    persona_llm_calls=persona_calls,
                     view_after=session.view().model_dump(),
                 )
             )
@@ -140,7 +143,10 @@ def run_episode(persona: Persona, llm: LlmClient, cfg: RunConfig, seed: int = 0)
             continue
 
         turns = session.say(text)
-        traj.turns.extend(_say_records(session, view, text, turns))
+        records = _say_records(session, view, text, turns)
+        if records:
+            records[0].persona_llm_calls = persona_calls
+        traj.turns.extend(records)
         last_utterance = turns[-1].utterance if turns else ""
 
     state = session.engine.state

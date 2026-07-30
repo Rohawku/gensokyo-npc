@@ -18,6 +18,9 @@ class Persona(Protocol):
     """
 
     name: str
+    llm_calls: int
+    """模拟器自己累计消耗的调用次数。只有套话玩家非零——算全局成本时
+    不能只看 NPC 那一侧。"""
 
     def next_input(self, view: PlayerView, last_utterance: str) -> str: ...
 
@@ -134,6 +137,7 @@ class HonestPlayer:
 
     def __init__(self, game_map: GameMap, seed: int = 0) -> None:
         self.map = game_map
+        self.llm_calls = 0
         self.seed = seed
         self._done: set[NpcId] = set()
         self._asks: dict[NpcId, int] = {}
@@ -344,6 +348,7 @@ class JailbreakPlayer:
 
     def __init__(self, seed: int = 0) -> None:
         self.seed = seed
+        self.llm_calls = 0
         self._turn = 0
 
     def next_input(self, view: PlayerView, last_utterance: str) -> str:
@@ -382,6 +387,7 @@ class FicklePlayer:
 
     def __init__(self, seed: int = 0, gap: int = 3) -> None:
         self.seed = seed
+        self.llm_calls = 0
         self.gap = max(1, gap)
         self.contradictions: list[tuple[int, int]] = []
         """(声明所在回合, 翻供所在回合)，回合号是 next_input 的调用序号（从 0 起）。"""
@@ -455,12 +461,14 @@ class SmoothTalkerPlayer:
         self.llm = llm
         self.seed = seed
         self.temperature = temperature
+        self.llm_calls = 0
 
     def next_input(self, view: PlayerView, last_utterance: str) -> str:
         messages = [
             Msg(role="system", content=SMOOTH_SYSTEM),
             Msg(role="user", content=self._prompt(view, last_utterance)),
         ]
+        self.llm_calls += 1
         try:
             raw = self.llm.complete(messages, temperature=self.temperature)
         except Exception:  # noqa: BLE001

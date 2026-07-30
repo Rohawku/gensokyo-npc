@@ -103,3 +103,22 @@ def test_emotion_and_mode_stay_consistent_through_the_engine() -> None:
             crossed = True
 
     assert crossed, "送四次礼应当把魔理沙的热切度推过 0.75 的阈值"
+
+
+def test_npc_taking_an_item_still_counts_as_having_received_it() -> None:
+    """抢来的也算收到过。不记的话交易门槛会永久打不开而东西已经没了——
+    魔理沙的 take_item 行为基线是全场最高的 0.30，她自己抢走珍稀魔法书
+    就会把第二条线索锁死。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="move", args={"to": "human_village"}))
+    eng.apply(Action(actor="player", tool="move", args={"to": "kirisame_magic_shop"}))
+    eng.apply(Action(actor="player", tool="take_item", args={"item": "rare_book"}))
+
+    eng.apply(Action(actor="marisa", tool="take_item", args={"item": "rare_book"}))
+
+    marisa = eng.state.npcs[NpcId("marisa")]
+    assert ItemId("rare_book") in marisa.received_items
+    result = eng.apply(
+        Action(actor="marisa", tool="reveal_info", args={"fact": "flower_magic_composition"})
+    )
+    assert result.ok is True

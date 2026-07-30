@@ -29,6 +29,9 @@ class TurnRecord(BaseModel):
     tool_results: list[dict[str, Any]] = Field(default_factory=list)
     """{"ok":..., "error_code":..., "observation":...}"""
     llm_calls: int = 0
+    persona_llm_calls: int = 0
+    """玩家模拟器自己消耗的调用次数。只有套话玩家非零；
+    算全局成本时不能只看 NPC 那一侧。"""
     latency_ms: int = 0
     """墙上时钟，不参与确定性比对。"""
     mode_before: str = ""

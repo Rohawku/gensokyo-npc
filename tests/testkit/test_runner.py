@@ -16,6 +16,15 @@ from gensokyo.world.observation import PlayerView
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _scripted(replies: list[str]) -> ScriptedLlmClient:
+    """NPC 侧脚本：决策 JSON + 说话文本成对给。"""
+    out: list[str] = []
+    for r in replies:
+        out.append('{"thought": "…", "tool_calls": []}')
+        out.append(r)
+    return ScriptedLlmClient(out * 20)
+
+
 def _cfg(max_turns: int = 40) -> RunConfig:
     return RunConfig(
         max_turns=max_turns,
@@ -46,6 +55,7 @@ class _Script:
     """按剧本发固定输入的人格。runner 的行为要能脱离任何具体人格来测。"""
 
     name = "script"
+    llm_calls = 0
 
     def __init__(self, lines: list[str]) -> None:
         self._lines = lines
@@ -236,3 +246,21 @@ def test_event_log_is_json_ready() -> None:
     dumped = json.dumps(traj.event_log)
 
     assert '"kind": "player_utterance"' in dumped
+
+
+def test_persona_llm_calls_are_recorded_separately() -> None:
+    """算全局成本时不能只看 NPC 那一侧。套话玩家每回合也要一次调用。"""
+
+    class CountingPersona:
+        name = "counting"
+
+        def __init__(self) -> None:
+            self.llm_calls = 0
+
+        def next_input(self, view: PlayerView, last_utterance: str) -> str:
+            self.llm_calls += 1
+            return "喂" if self.llm_calls == 1 else "/quit"
+
+    traj = run_episode(CountingPersona(), _scripted(["随便"]), _cfg(), seed=0)
+
+    assert traj.turns[0].persona_llm_calls == 1

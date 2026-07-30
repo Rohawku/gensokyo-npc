@@ -3,6 +3,7 @@ import readline  # noqa: F401  上下箭头翻历史；不 import 方向键会�
 from pathlib import Path
 
 from gensokyo.llm.client import OpenAiCompatibleClient
+from gensokyo.session.commands import ALIASES
 from gensokyo.session.loop import Session
 from gensokyo.world.observation import PlayerView
 from gensokyo.world.tools import ActionResult
@@ -37,29 +38,6 @@ HELP = """指令（/move /walk 同 /go，/take /get 同 /pick）：
   /quit          退出
 直接输入文字则是对在场的人说话。
 """
-
-ALIASES = {
-    "go": "go",
-    "move": "go",
-    "walk": "go",
-    "g": "go",
-    "give": "give",
-    "pay": "give",
-    "pick": "pick",
-    "take": "pick",
-    "get": "pick",
-    "look": "look",
-    "l": "look",
-    "save": "save",
-    "load": "load",
-    "help": "help",
-    "h": "help",
-    "quit": "quit",
-    "q": "quit",
-    "exit": "quit",
-}
-"""指令别名。玩家打 /move 而不是 /go 是很自然的事，
-不认识就当台词发给 NPC 会让她显得像个傻子。"""
 
 
 def render(view: PlayerView) -> str:

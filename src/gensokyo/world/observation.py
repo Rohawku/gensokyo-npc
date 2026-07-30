@@ -50,6 +50,8 @@ class NpcPanel(BaseModel):
     emotion: float
     mode: str
     mode_hint: str = ""
+    will_talk: bool = False
+    """她现在是否有话可说。机器可读的门槛信号，供玩家模拟器与指标使用。"""
     """模式的中文说法。mode 是内部标识符（normal/calm/destructive），
     不该出现在玩家屏幕上。"""
 
@@ -67,6 +69,9 @@ class PlayerView(BaseModel):
     items_here: dict[str, int] = Field(default_factory=dict)
     """以中文物品名为键。玩家屏幕上不该出现 offering_coin 这种 id。"""
     known_facts: list[str] = Field(default_factory=list)
+    known_fact_ids: list[str] = Field(default_factory=list)
+    """线索 id。按 NPC 统计线索产出率需要它——只有内容字符串的话，
+    两个 NPC 同场时会把线索归错人。"""
     quest_stage: str = ""
     """阶段枚举名，供调试与测试。玩家可见的文本用 quest_hint。"""
     quest_hint: str = ""
