@@ -3,7 +3,7 @@
   content: 结界在三天前的子时出现了一次异常波动，方向正对无缘塚。
   is_clue: true
   reveal_conditions:
-    attitude_gte: 40
+    attitude_gte: 24
 
 - id: flower_magic_composition
   holder: marisa
@@ -17,4 +17,4 @@
   content: 很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。
   is_clue: true
   reveal_conditions:
-    attitude_gte: 60
+    attitude_gte: 12
