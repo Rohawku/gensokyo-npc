@@ -83,8 +83,10 @@ def test_dialogue_history_and_errors_are_rendered() -> None:
 
 
 def test_prompt_prose_contains_no_internal_identifiers() -> None:
-    """内部标识符（物品 id、情绪变量名、模式名、阶段枚举名）不能进 prompt 散文，
-    紧贴中文出现时模型有概率把它们说出口。工具名与参数名是例外——
+    """内部标识符（物品 id、情绪变量名、模式名、阶段枚举名、信息隔离开关名）
+    不能进 prompt 散文，紧贴中文出现时模型有概率把它们说出口。
+    system 和 user 两条消息都要查——角色卡里的 forbidden_knowledge 渲染进
+    system，只查 user 等于漏掉半个 prompt。工具名与参数名是例外——
     那是模型必须原样填进 JSON 的东西。"""
     eng = _engine()
     eng.state.npcs[NpcId("marisa")].inventory[ItemId("rare_book")] = 1
@@ -92,14 +94,16 @@ def test_prompt_prose_contains_no_internal_identifiers() -> None:
     leaks = ["rare_book", "magic_mushroom", "withered_flower", "old_music_box"]
     leaks += ["annoyance", "eagerness", "excitement"]
     leaks += ["S0_UNAWARE", "S1_ANOMALY", "S2_CLUES", "S3_SOURCE"]
+    leaks += ["modern_technology", "outside_basement_events", "blind_to_outside"]
 
     for npc_id in (NpcId("reimu"), NpcId("marisa"), NpcId("flandre")):
         card = eng.defs.characters[npc_id]
-        user = build_messages(card, eng.observe(npc_id), [], eng.available_tools(npc_id), [])[
-            -1
-        ].content
-        for token in leaks:
-            assert token not in user, f"{npc_id} 的 prompt 泄漏了内部标识符 {token}"
+        messages = build_messages(card, eng.observe(npc_id), [], eng.available_tools(npc_id), [])
+        for msg in messages:
+            for token in leaks:
+                assert token not in msg.content, (
+                    f"{npc_id} 的 {msg.role} prompt 泄漏了内部标识符 {token}"
+                )
 
 
 def test_unrevealable_fact_hides_its_id_from_the_model() -> None:

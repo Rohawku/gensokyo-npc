@@ -45,7 +45,7 @@ tools:
 
 knowledge:
   holds_facts: [flower_magic_composition]
-  forbidden_knowledge: [modern_technology]
+  forbidden_knowledge: ["外界的科技"]
 
 behavior_baseline:
   tool_frequency:

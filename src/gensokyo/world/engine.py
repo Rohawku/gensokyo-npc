@@ -386,8 +386,6 @@ class WorldEngine:
 
     # ---------- 观测视图 ----------
 
-    OUTSIDE_BLIND = "outside_basement_events"
-
     def observe(self, npc_id: NpcId) -> Observation:
         card = self.defs.characters[npc_id]
         npc = self.state.npcs[npc_id]
@@ -420,7 +418,7 @@ class WorldEngine:
                 )
             )
 
-        blind = self.OUTSIDE_BLIND in card.knowledge.forbidden_knowledge
+        blind = card.knowledge.blind_to_outside
 
         return Observation(
             tick=self.state.tick,

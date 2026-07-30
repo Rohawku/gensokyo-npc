@@ -47,7 +47,7 @@ tools:
 
 knowledge:
   holds_facts: [barrier_anomaly_time]
-  forbidden_knowledge: [modern_technology]
+  forbidden_knowledge: ["外界的科技"]
 
 behavior_baseline:
   tool_frequency:

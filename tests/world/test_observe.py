@@ -36,7 +36,7 @@ def test_observation_knows_when_player_is_present() -> None:
 
 
 def test_flandre_cannot_see_quest_progress() -> None:
-    """芙兰的 forbidden_knowledge 含 outside_basement_events，
+    """芙兰的角色卡打开了 blind_to_outside，
     她不该知道外面的异变调查进展。"""
     eng = _engine()
 

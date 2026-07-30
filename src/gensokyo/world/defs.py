@@ -73,6 +73,9 @@ class DormantMemoryCfg(StrictModel):
 class KnowledgeCfg(StrictModel):
     holds_facts: list[FactId] = Field(default_factory=list)
     forbidden_knowledge: list[str] = Field(default_factory=list)
+    blind_to_outside: bool = False
+    """该角色不知道自己所在地点之外发生的事。信息隔离的机器开关，
+    与 forbidden_knowledge 的中文散文分开——一个字符串不该同时当键和文案。"""
     dormant_memories: list[DormantMemoryCfg] = Field(default_factory=list)
 
 
