@@ -103,8 +103,19 @@ class WorldEngine:
             return ActionResult.failed(ErrorCode.UNKNOWN_TOOL, f"动作 {action.tool} 尚未实现。")
         result = handler(action, args)
         if result.ok:
+            self.state.action_log.append(action)
             self.refresh_quest()
         return result
+
+    @classmethod
+    def replay(cls, actions: list[Action], defs: WorldDefs) -> "WorldEngine":
+        """从动作日志重建引擎。存档读档、调试重现、离线分析共用这一个入口。"""
+        from gensokyo.world.state import build_initial_state
+
+        engine = cls(build_initial_state(defs), defs)
+        for action in actions:
+            engine.apply(action)
+        return engine
 
     def refresh_quest(self) -> None:
         clues = self.defs.clue_facts()

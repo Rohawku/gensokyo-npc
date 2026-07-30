@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from gensokyo.world.defs import WorldDefs
 from gensokyo.world.events import Event
 from gensokyo.world.ids import FactId, ItemId, LocationId, NpcId
+from gensokyo.world.tools import Action
 
 
 class QuestStage(IntEnum):
@@ -54,6 +55,7 @@ class WorldState(BaseModel):
     locations: dict[LocationId, LocationState]
     quest: QuestState = Field(default_factory=QuestState)
     event_log: list[Event] = Field(default_factory=list)
+    action_log: list[Action] = Field(default_factory=list)
 
 
 PLAYER_START = LocationId("hakurei_shrine")
