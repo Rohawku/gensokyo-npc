@@ -1,20 +1,30 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from gensokyo.world.ids import FactId, ItemId, LocationId, NpcId
 
 
-class SpeechCfg(BaseModel):
+class StrictModel(BaseModel):
+    """静态定义的共同基类。
+
+    YAML 里拼错字段必须立刻报错。角色差异全部由这些数据承载，
+    静默退回默认值会表现成「情绪 gate 不生效」这类极难定位的行为 bug。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SpeechCfg(StrictModel):
     style: str
     forbidden_phrases: list[str] = Field(default_factory=list)
     quirks: list[str] = Field(default_factory=list)
 
 
-class PersonaCfg(BaseModel):
+class PersonaCfg(StrictModel):
     core: str
     speech: SpeechCfg
 
 
-class MemoryCfg(BaseModel):
+class MemoryCfg(StrictModel):
     """W1 载入但不使用，W2 的分层记忆会读它。"""
 
     lambda_decay: float
@@ -22,7 +32,7 @@ class MemoryCfg(BaseModel):
     reflection_threshold: float
 
 
-class EmotionMode(BaseModel):
+class EmotionMode(StrictModel):
     name: str
     range: tuple[float, float]
     tools_allow: list[str] = Field(default_factory=list)
@@ -37,18 +47,18 @@ class EmotionMode(BaseModel):
         return low <= value < high
 
 
-class EmotionCfg(BaseModel):
+class EmotionCfg(StrictModel):
     variable: str
     initial: float = 0.0
     decay_per_tick: float = 0.0
     modes: list[EmotionMode]
 
 
-class ToolsCfg(BaseModel):
+class ToolsCfg(StrictModel):
     deny_always: list[str] = Field(default_factory=list)
 
 
-class DormantMemoryCfg(BaseModel):
+class DormantMemoryCfg(StrictModel):
     """W1 载入但不使用，W2 的沉睡记忆会读它。"""
 
     content_key: str
@@ -56,13 +66,13 @@ class DormantMemoryCfg(BaseModel):
     hint: str
 
 
-class KnowledgeCfg(BaseModel):
+class KnowledgeCfg(StrictModel):
     holds_facts: list[FactId] = Field(default_factory=list)
     forbidden_knowledge: list[str] = Field(default_factory=list)
     dormant_memories: list[DormantMemoryCfg] = Field(default_factory=list)
 
 
-class CharacterCard(BaseModel):
+class CharacterCard(StrictModel):
     id: NpcId
     name: str
     home: LocationId
@@ -74,12 +84,12 @@ class CharacterCard(BaseModel):
     behavior_baseline: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
-class RevealConditions(BaseModel):
+class RevealConditions(StrictModel):
     attitude_gte: int | None = None
     traded_item_in: list[ItemId] = Field(default_factory=list)
 
 
-class FactDef(BaseModel):
+class FactDef(StrictModel):
     id: FactId
     holder: NpcId
     content: str
@@ -87,13 +97,13 @@ class FactDef(BaseModel):
     is_clue: bool = False
 
 
-class ItemDef(BaseModel):
+class ItemDef(StrictModel):
     id: ItemId
     name: str
     description: str = ""
 
 
-class LocationDef(BaseModel):
+class LocationDef(StrictModel):
     id: LocationId
     name: str
     description: str = ""
@@ -101,7 +111,7 @@ class LocationDef(BaseModel):
     items: dict[ItemId, int] = Field(default_factory=dict)
 
 
-class WorldDefs(BaseModel):
+class WorldDefs(StrictModel):
     locations: dict[LocationId, LocationDef]
     items: dict[ItemId, ItemDef]
     facts: dict[FactId, FactDef]
