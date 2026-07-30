@@ -122,3 +122,26 @@ def test_reimu_stays_out_of_irritated_while_being_paid() -> None:
     reimu = eng.state.npcs[NpcId("reimu")]
     assert reimu.attitude >= 24
     assert reimu.mode == "normal"
+
+
+NPC_ONLY_ACTIONS = [
+    Action(actor="player", tool="break_item", args={"item": "offering_coin"}),
+    Action(actor="player", tool="reveal_info", args={"fact": "barrier_anomaly_time"}),
+    Action(actor="player", tool="ask_player", args={"question": "你在吗"}),
+    Action(actor="player", tool="use_spellcard", args={"name": "梦想封印"}),
+]
+
+
+def test_player_calling_npc_only_actions_fails_without_raising() -> None:
+    """apply() 对任何坏输入都必须返回 ActionResult，不能抛异常——
+    否则玩家侧一条走错的指令会掀掉整个进程。break_item 原先直接
+    KeyError('player')，因为它按 actor 查 npcs 表而玩家不在表里。"""
+    for action in NPC_ONLY_ACTIONS:
+        eng = _engine()
+
+        result = eng.apply(action)
+
+        assert result.ok is False, f"玩家调用 {action.tool} 竟然成功了"
+        assert result.error_code is ErrorCode.TOOL_DENIED
+        assert eng.state.event_log == []
+        assert eng.state.seq == 0

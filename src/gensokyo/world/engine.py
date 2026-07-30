@@ -353,6 +353,9 @@ class WorldEngine:
 
     def _do_ask_player(self, action: Action, args: BaseModel) -> ActionResult:
         assert isinstance(args, AskPlayerArgs)
+        if action.actor == "player":
+            return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
+
         ev = self._emit(
             EventKind.NPC_ACTION,
             action.actor,
@@ -362,6 +365,9 @@ class WorldEngine:
 
     def _do_use_spellcard(self, action: Action, args: BaseModel) -> ActionResult:
         assert isinstance(args, UseSpellcardArgs)
+        if action.actor == "player":
+            return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
+
         ev = self._emit(
             EventKind.NPC_ACTION,
             action.actor,
@@ -371,6 +377,9 @@ class WorldEngine:
 
     def _do_break_item(self, action: Action, args: BaseModel) -> ActionResult:
         assert isinstance(args, BreakItemArgs)
+        if action.actor == "player":
+            return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
+
         npc_id = NpcId(action.actor)
         npc = self.state.npcs[npc_id]
         if not self._pop_items(npc.inventory, args.item, 1):
