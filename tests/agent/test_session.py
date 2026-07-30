@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 from pathlib import Path
 
+from gensokyo.cli import load_dotenv
 from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.session.loop import Session
 
@@ -148,3 +150,25 @@ def test_is_over_reflects_the_ending() -> None:
     sess.engine.state.quest.ending = "forgotten"
 
     assert sess.is_over() is True
+
+
+def test_load_dotenv_fills_env_without_overriding(tmp_path: Path) -> None:
+    """快速开始文档里「cp .env.example .env 然后 make play」必须真的能跑通。"""
+    env = tmp_path / ".env"
+    env.write_text(
+        "# 注释\nGENSOKYO_TEST_A=from_file\nGENSOKYO_TEST_B=from_file\n\n", encoding="utf-8"
+    )
+    os.environ.pop("GENSOKYO_TEST_A", None)
+    os.environ["GENSOKYO_TEST_B"] = "from_shell"
+
+    load_dotenv(env)
+
+    assert os.environ["GENSOKYO_TEST_A"] == "from_file"
+    assert os.environ["GENSOKYO_TEST_B"] == "from_shell"
+
+    os.environ.pop("GENSOKYO_TEST_A", None)
+    os.environ.pop("GENSOKYO_TEST_B", None)
+
+
+def test_load_dotenv_tolerates_missing_file(tmp_path: Path) -> None:
+    load_dotenv(tmp_path / "nope.env")

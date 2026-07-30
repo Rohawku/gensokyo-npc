@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from gensokyo.llm.client import OpenAiCompatibleClient
@@ -6,6 +7,23 @@ from gensokyo.world.observation import PlayerView
 from gensokyo.world.tools import ActionResult
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def load_dotenv(path: Path) -> None:
+    """读 .env 填进环境变量，已存在的环境变量优先。
+
+    不引入 python-dotenv：这是唯一需要它的地方，而快速开始文档里
+    「cp .env.example .env 然后 make play」必须真的能跑通。
+    """
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
 
 HELP = """指令：
   /go <地点>     移动
@@ -69,6 +87,7 @@ def _do(session: Session, result: ActionResult) -> None:
 
 
 def main() -> None:
+    load_dotenv(REPO_ROOT / ".env")
     session = Session.create(
         scenario_dir=REPO_ROOT / "scenario",
         characters_dir=REPO_ROOT / "characters",

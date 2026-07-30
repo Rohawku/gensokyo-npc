@@ -101,9 +101,19 @@
 ```bash
 git clone https://github.com/Rohawku/gensokyo-npc && cd gensokyo-npc
 uv sync --extra dev
-cp .env.example .env          # 指向你的 vLLM 或任意 OpenAI 兼容端点
+cp .env.example .env          # 指向任意 OpenAI 兼容端点
 make play
 ```
+
+`.env.example` 默认指向本机 vLLM。用 [Ollama](https://ollama.com) 的话改成：
+
+```
+GENSOKYO_MODEL=qwen3:8b
+GENSOKYO_BASE_URL=http://localhost:11434/v1
+GENSOKYO_API_KEY=ollama
+```
+
+8B 模型在 Apple Silicon 上每回合约 15 秒。回合制文字游戏够用，嫌慢可以换更小的模型。
 
 只想看世界引擎跑测试（**不需要模型、不需要网络、不到 1 秒**）：
 
