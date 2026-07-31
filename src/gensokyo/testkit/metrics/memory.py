@@ -60,6 +60,13 @@ DENIAL_WORDS: tuple[str, ...] = (
 
 class MemoryMetrics(BaseModel):
     recall_probes: int
+    probe_episodes: int
+    """跑出过探针的对局数。**这才是探针类比率的有效分母。**
+
+    同一局里的探针结果高度相关——她整局要么认真回答、要么整局敷衍，实测
+    每局召回率在 0.00 和 0.76 之间。16 次探针不是 16 个独立样本，是 1 个
+    样本重复观测 16 次。按 166 报分母等于把置信区间凭空缩小 4 倍
+    （工程日志坑 #25）。"""
     fact_recall_rate: float
     """召回探针里，她说出了**至少一件真实给过**的东西的比例。硬指标。"""
     fact_hallucination_rate: float
@@ -116,6 +123,7 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
     surfaces = _surface_to_item(defs)
 
     recall_probes = 0
+    probe_episodes = 0
     recall_hit = 0
     recall_halluc = 0
     negative_probes = 0
@@ -126,6 +134,8 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
 
     for traj in trajectories:
         given = _given_names(traj, defs)
+        if any(turn.player_input in PROBE_BY_QUESTION for turn in traj.turns):
+            probe_episodes += 1
         for turn in traj.turns:
             if turn.npc_id is not None:
                 npc_turns += 1
@@ -154,6 +164,7 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
 
     return MemoryMetrics(
         recall_probes=recall_probes,
+        probe_episodes=probe_episodes,
         fact_recall_rate=_rate(recall_hit, recall_probes),
         fact_hallucination_rate=_rate(recall_halluc, recall_probes),
         negative_probes=negative_probes,

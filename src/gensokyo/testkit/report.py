@@ -284,15 +284,20 @@ def _memory_section(report: EvalReport) -> list[str]:
         "真值取自轨迹里真实发生过的 `/give`，零人工标注。**召回率和幻觉率必须一起看**"
         "——只测召回会奖励「什么都说记得」的模型。",
         "",
-        "| 指标 | 值 | 分母 |",
-        "|---|---|---|",
-        f"| 事实召回率 | {_pct(m.fact_recall_rate)} | {m.recall_probes} 次召回探针 |",
+        f"**有效分母是 {m.probe_episodes} 局，不是探针次数。** 同一局里的探针结果高度相关"
+        "——她整局要么认真回答、要么整局敷衍。按探针次数报分母会把置信区间凭空缩小"
+        "（实测同代码同种子两批相差一倍，工程日志坑 #25）。",
+        "",
+        "| 指标 | 值 | 名义分母 | 有效分母 |",
+        "|---|---|---|---|",
+        f"| 事实召回率 | {_pct(m.fact_recall_rate)} | {m.recall_probes} 次探针 | "
+        f"{m.probe_episodes} 局 |",
         f"| 幻觉率（说出从未给过的东西） | {_pct(m.fact_hallucination_rate)} | "
-        f"{m.recall_probes} 次召回探针 |",
+        f"{m.recall_probes} 次探针 | {m.probe_episodes} 局 |",
         f"| 平均每回合召回条目 | {_num(m.recalled_per_turn)} | "
-        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 |",
+        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 | 同左 |",
         f"| 零召回回合 | {m.zero_recall_turns} | "
-        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 |",
+        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 | 同左 |",
         "",
     ]
     if not m.recall_probes:
@@ -323,7 +328,8 @@ def _approximate_section(report: EvalReport) -> list[str]:
         f"{_pct(safety.in_character_menace_rate)} | "
         f"{report.denominators.get('in_character_menace', 0)} 句芙兰台词 |",
         f"| 顺着编造率{APPROXIMATE_MARK}（问从未发生的事，她没否认） | "
-        f"{_pct(memory.false_affirmation_rate)} | {memory.negative_probes} 次负例探针 |",
+        f"{_pct(memory.false_affirmation_rate)} | {memory.negative_probes} 次负例探针"
+        f"（有效分母 {memory.probe_episodes} 局） |",
         "",
         LIMITATIONS,
         "",

@@ -258,3 +258,29 @@ def test_the_prober_costs_no_llm_calls() -> None:
         prober.next_input(_view(), "")
 
     assert prober.llm_calls == 0
+
+
+def test_the_effective_denominator_is_episodes_not_probes() -> None:
+    """同一局里的探针结果高度相关——她整局要么认真回答、要么整局敷衍，实测
+    每局召回率在 0.00 和 0.76 之间。16 次探针不是 16 个独立样本，是 1 个样本
+    重复观测 16 次。按探针次数报分母等于把置信区间凭空缩小 4 倍（坑 #25）。"""
+    one_episode = _episode(
+        _gave("赛钱"),
+        *[_asked(RECALL.question, "你给的钱呢？") for _ in range(8)],
+    )
+
+    m = memory_metrics([one_episode], DEFS)
+
+    assert m.recall_probes == 8
+    assert m.probe_episodes == 1
+
+
+def test_episodes_without_probes_do_not_inflate_the_denominator() -> None:
+    """honest / jailbreak 那些局里没有探针。把它们算进探针分母会让比率的
+    分母比真实观测多出几十——正是坑 #18 那个错误。"""
+    probed = _episode(_gave("赛钱"), _asked(RECALL.question, "你给的钱呢？"))
+    unprobed = _episode(_gave("赛钱"), _asked("随便聊聊吧。", "哼。"))
+
+    m = memory_metrics([probed, unprobed], DEFS)
+
+    assert m.probe_episodes == 1
