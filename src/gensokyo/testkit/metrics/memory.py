@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from gensokyo.session.commands import ALIASES
 from gensokyo.testkit.metrics.safety import hits
-from gensokyo.testkit.personas import PROBE_BY_QUESTION
+from gensokyo.testkit.personas import FLIP_LINES, PROBE_BY_QUESTION
 from gensokyo.testkit.trajectory import Trajectory
 from gensokyo.world.defs import WorldDefs
 
@@ -58,6 +58,33 @@ DENIAL_WORDS: tuple[str, ...] = (
 """
 
 
+FLAG_WORDS: tuple[str, ...] = (
+    "刚才",
+    "刚说",
+    "刚刚",
+    "不是说",
+    "你不是",
+    "怎么又",
+    "又变了",
+    "前后",
+    "矛盾",
+    "撒谎",
+    "说谎",
+    "骗",
+    "改口",
+    "自相",
+    "到底哪句",
+    "哪句是真",
+)
+"""指出矛盾的标记词。**近似指标**，报告里按近似标注。
+
+**这一项的「正确答案」因角色而异**，所以比率必须按角色看：灵梦该直接怼；
+芙兰大概率根本没记住前一句，而没记住在她身上不算失败——她的 λ 是全场
+最大的，忘得快是设定而不是缺陷。一个跨角色聚合的矛盾检出率会把「符合人设
+的遗忘」和「被绕晕了」加在一起，正是坑 #18 那个错误。
+"""
+
+
 class MemoryMetrics(BaseModel):
     recall_probes: int
     probe_episodes: int
@@ -74,6 +101,10 @@ class MemoryMetrics(BaseModel):
     negative_probes: int
     false_affirmation_rate: float
     """负例探针里，她**没有**否认那件从未发生的事的比例。近似指标。"""
+    contradiction_probes: int
+    contradiction_episodes: int
+    contradiction_flag_rate: dict[str, float]
+    """npc_id -> 她指出玩家改口的比例。**按角色拆开**，见 `FLAG_WORDS`。"""
     recalled_per_turn: float
     """平均每个 NPC 回合召回到的记忆条目数。不是质量指标，是「检索通路
     有没有在工作」的体检项——零召回说明记忆层根本没接上。"""
@@ -128,6 +159,9 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
     recall_halluc = 0
     negative_probes = 0
     false_affirm = 0
+    flips: dict[str, int] = {}
+    flagged: dict[str, int] = {}
+    contradiction_episodes = 0
     recalled_total = 0
     npc_turns = 0
     zero_recall = 0
@@ -136,12 +170,19 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
         given = _given_names(traj, defs)
         if any(turn.player_input in PROBE_BY_QUESTION for turn in traj.turns):
             probe_episodes += 1
+        if any(turn.player_input in FLIP_LINES for turn in traj.turns):
+            contradiction_episodes += 1
         for turn in traj.turns:
             if turn.npc_id is not None:
                 npc_turns += 1
                 recalled_total += len(turn.retrieved_memory_ids)
                 if not turn.retrieved_memory_ids:
                     zero_recall += 1
+
+            if turn.player_input in FLIP_LINES and turn.npc_id and turn.utterance:
+                flips[turn.npc_id] = flips.get(turn.npc_id, 0) + 1
+                if hits(turn.utterance, FLAG_WORDS):
+                    flagged[turn.npc_id] = flagged.get(turn.npc_id, 0) + 1
 
             probe = PROBE_BY_QUESTION.get(turn.player_input)
             if probe is None or turn.npc_id is None or not turn.utterance:
@@ -169,6 +210,11 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
         fact_hallucination_rate=_rate(recall_halluc, recall_probes),
         negative_probes=negative_probes,
         false_affirmation_rate=_rate(false_affirm, negative_probes),
+        contradiction_probes=sum(flips.values()),
+        contradiction_episodes=contradiction_episodes,
+        contradiction_flag_rate={
+            npc: _rate(flagged.get(npc, 0), n) for npc, n in sorted(flips.items())
+        },
         recalled_per_turn=_rate(recalled_total, npc_turns),
         zero_recall_turns=zero_recall,
     )

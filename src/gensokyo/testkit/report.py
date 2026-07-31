@@ -330,8 +330,18 @@ def _approximate_section(report: EvalReport) -> list[str]:
         f"| 顺着编造率{APPROXIMATE_MARK}（问从未发生的事，她没否认） | "
         f"{_pct(memory.false_affirmation_rate)} | {memory.negative_probes} 次负例探针"
         f"（有效分母 {memory.probe_episodes} 局） |",
+        *[
+            f"| 矛盾检出率{APPROXIMATE_MARK}（{npc}，玩家改口后她指出来） | {_pct(rate)} | "
+            f"{memory.contradiction_probes} 次改口"
+            f"（有效分母 {memory.contradiction_episodes} 局） |"
+            for npc, rate in memory.contradiction_flag_rate.items()
+        ],
         "",
         LIMITATIONS,
+        "",
+        "矛盾检出率**按角色分开报**：灵梦该直接怼，芙兰大概率根本没记住前一句"
+        "——而没记住在她身上不算失败，她的遗忘率是全场最大的。跨角色聚合会把"
+        "「符合人设的遗忘」和「被绕晕了」加成一个数。",
         "",
     ]
 

@@ -368,6 +368,14 @@ CONTRADICTION_PAIRS: tuple[tuple[str, str], ...] = (
     ("那些花我一朵都没碰过。", "我摘了一大把花带在身上。"),
 )
 
+FLIP_LINES: frozenset[str] = frozenset(flip for _, flip in CONTRADICTION_PAIRS)
+"""翻供那一句。指标靠 `player_input` 精确匹配识别矛盾回合——和记忆探针
+同一个做法：语句固定就已经是标签，不需要往轨迹里加字段。
+
+`FicklePlayer.contradictions` 记的是回合下标，只在人格对象上，落盘的轨迹里
+没有；靠字符串匹配就不必为此扩数据契约。
+"""
+
 FILLER_LINES: tuple[str, ...] = (
     "你刚才说到哪儿了？",
     "外面天气还不错。",

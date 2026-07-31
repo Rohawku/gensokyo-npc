@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from gensokyo.testkit.metrics.memory import DENIAL_WORDS, memory_metrics
-from gensokyo.testkit.personas import MEMORY_PROBES, MemoryProbePlayer
+from gensokyo.testkit.personas import FLIP_LINES, MEMORY_PROBES, MemoryProbePlayer
 from gensokyo.testkit.trajectory import Trajectory, TurnRecord
 from gensokyo.world.ids import ItemId
 from gensokyo.world.loader import load_defs
@@ -284,3 +284,61 @@ def test_episodes_without_probes_do_not_inflate_the_denominator() -> None:
     m = memory_metrics([probed, unprobed], DEFS)
 
     assert m.probe_episodes == 1
+
+
+# ---------------------------------------------------------------- 矛盾检出
+
+FLIP = next(iter(FLIP_LINES))
+
+
+def _flip(answer: str, npc: str = "reimu") -> TurnRecord:
+    return TurnRecord(tick=2, player_input=FLIP, kind="say", npc_id=npc, utterance=answer)
+
+
+def test_pointing_out_the_change_of_story_is_counted() -> None:
+    traj = _episode(_flip("你刚才明明说的是另一套，到底哪句是真的？"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.contradiction_probes == 1
+    assert m.contradiction_flag_rate["reimu"] == 1.0
+
+
+def test_letting_it_slide_is_not_counted() -> None:
+    traj = _episode(_flip("哦。"))
+
+    assert memory_metrics([traj], DEFS).contradiction_flag_rate["reimu"] == 0.0
+
+
+def test_the_rate_is_split_by_character_because_the_right_answer_differs() -> None:
+    """灵梦该直接怼；芙兰大概率根本没记住前一句，而没记住在她身上不算失败
+    ——她的 λ 是全场最大的，忘得快是设定。跨角色聚合会把「符合人设的遗忘」
+    和「被绕晕了」加成一个数，正是坑 #18 那个错误。"""
+    traj = _episode(
+        _flip("你刚才说的不是这个。", npc="reimu"),
+        _flip("是吗？我们来玩吧！", npc="flandre"),
+    )
+
+    rates = memory_metrics([traj], DEFS).contradiction_flag_rate
+
+    assert rates["reimu"] == 1.0
+    assert rates["flandre"] == 0.0
+
+
+def test_the_contradiction_denominator_is_also_reported_in_episodes() -> None:
+    """六个矛盾对在一局里出现，效果和记忆探针一样高度相关（坑 #25）。"""
+    traj = _episode(*[_flip("你刚才说的不是这个。") for _ in range(6)])
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.contradiction_probes == 6
+    assert m.contradiction_episodes == 1
+
+
+def test_non_flip_turns_are_not_contradiction_probes() -> None:
+    traj = _episode(_asked("随便聊聊吧。", "你刚才说什么？"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.contradiction_probes == 0
+    assert m.contradiction_flag_rate == {}
