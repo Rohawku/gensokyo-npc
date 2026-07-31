@@ -174,13 +174,15 @@ def test_a_genuine_tie_is_broken_by_id_not_by_insertion_order() -> None:
     """排序键必须全序。依赖 sort 的稳定性（即插入顺序）不算确定：重建存档时
     插入顺序由动作日志决定，压缩也会重排记忆库。
 
-    构造真同分要让四路信号完全一致——同 seq、同正文、同 salience。第一版
-    这个测试用了 seq 7 和 8，而 recency 依赖 seq，两者分数根本不相等，
-    于是它测的不是同分（坑 #11 那类空转测试）。这里按 id 倒序插入，
-    去掉排序键里的 id 就会红。"""
+    构造真同分要让四路信号完全一致。第一版这个测试用了 seq 7 和 8，而
+    recency 依赖 seq，两者分数根本不相等，于是它测的不是同分（坑 #11 那类
+    空转测试）。正文也不能一模一样——同内容会被检索合并成一条，于是
+    tie-break 根本不会被调用。两条正文长度相同、与 query 的重叠也相同，
+    所以相似度相等而内容不同。这里按 id 倒序插入，去掉排序键里的 id 就会红。
+    """
     store = _store(
-        _item(seq=7, content="一模一样的内容。"),
-        _item(seq=7, content="一模一样的内容。"),
+        _item(seq=7, content="一模一样的东西甲。"),
+        _item(seq=7, content="一模一样的东西乙。"),
     )
     store.items[0].id = "m-b"
     store.items[1].id = "m-a"
@@ -241,3 +243,35 @@ def test_active_memories_are_not_touched_by_dormant_recall() -> None:
     store = _store(_item(seq=1, content="普通的事。", triggers=("枯花",)))
 
     assert recall_dormant(store, frozenset({"枯花"}), now_seq=30) == []
+
+
+def test_identical_memories_do_not_each_take_a_recall_slot() -> None:
+    """实测：玩家投了 4 次赛钱，四条记忆的正文一模一样，于是 4 个召回名额
+    全塞成同一句「来访者给了我 1 个赛钱。」——那一段 prompt 等于只说了一件
+    事，另外三件真正有用的记忆被挤掉了。
+
+    这和坑 #19 是同一类错误：**把上下文塞进 prompt 的机制，要先看塞进去的
+    内容本身有没有意义。** 防复读那段提示当时也是自己带着重复。
+    """
+    store = _store(
+        *[_item(seq=i, content="来访者给了我 1 个赛钱。") for i in range(1, 5)],
+        _item(seq=5, content="来访者问过结界的事。"),
+        _item(seq=6, content="来访者提过无缘塚。"),
+    )
+
+    top = retrieve(store, "赛钱 结界 无缘塚", _card(), now_seq=6, k=4)
+
+    contents = [s.item.content for s in top]
+    assert len(contents) == len(set(contents))
+    assert len(contents) == 3
+
+
+def test_the_merged_count_is_reported_so_the_information_is_not_lost() -> None:
+    """同一件事发生四次是四条独立记忆。合并成一条不等于把次数丢掉——
+    她该记得是 4 次而不是 1 次，否则「投了几次赛钱」这个玩法数字就没了。"""
+    store = _store(*[_item(seq=i, content="来访者给了我 1 个赛钱。") for i in range(1, 5)])
+
+    top = retrieve(store, "赛钱", _card(), now_seq=4, k=4)
+
+    assert len(top) == 1
+    assert top[0].duplicates == 3

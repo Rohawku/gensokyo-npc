@@ -91,6 +91,7 @@ def _say_records(
             tool_calls=_tool_calls(turn),
             tool_results=_tool_results(turn),
             llm_calls=turn.llm_calls,
+            retrieved_memory_ids=list(turn.retrieved_memory_ids),
             latency_ms=turn.latency_ms,
             mode_before=turn.mode_before,
             mode_after=turn.mode_after,

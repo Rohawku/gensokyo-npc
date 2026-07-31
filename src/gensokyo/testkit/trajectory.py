@@ -35,6 +35,9 @@ class TurnRecord(BaseModel):
     算全局成本时不能只看 NPC 那一侧。"""
     latency_ms: int = 0
     """墙上时钟，不参与确定性比对。"""
+    retrieved_memory_ids: list[str] = Field(default_factory=list)
+    """本回合召回的记忆条目。记忆探针要能区分「没召回到」和「召回到了但
+    她没用」——这两种失败一个调检索、一个调生成，修法完全不同。"""
     mode_before: str = ""
     mode_after: str = ""
     view_after: dict[str, Any] = Field(default_factory=dict)

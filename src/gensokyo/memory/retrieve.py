@@ -18,7 +18,7 @@ score = w1·sim(query, item.content)
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from gensokyo.memory.item import MemoryItem, MemoryStore, Tier
 from gensokyo.memory.similarity import Similarity, bigram_cosine
@@ -49,6 +49,12 @@ class Scored:
     recency: float
     salience: float
     relevance: float
+    duplicates: int = 0
+    """还有多少条同内容的记忆被这一条代表了。
+
+    是**检索结果**的属性而不是记忆的属性：同一件事发生四次就是四条独立
+    记忆，只是没必要在 prompt 里说四遍。
+    """
 
     @property
     def total(self) -> float:
@@ -113,10 +119,17 @@ def retrieve(
     k: int = 5,
     similarity: Similarity = bigram_cosine,
 ) -> list[Scored]:
-    """取分数最高的 k 条，并记一次访问。
+    """取分数最高的 k 条，**同内容只占一个名额**，并记一次访问。
 
-    访问计数会影响降级（常被想起的事不容易忘），所以检索**有副作用**。
-    这一点必须显式：一个「只是看看」的调用要用 `score_all`。
+    去重是必须的而不是优化：实测玩家投了 4 次赛钱，四条记忆的正文一模一样
+    （「来访者给了我 1 个赛钱。」），于是 4 个召回名额全塞成同一句话，
+    prompt 里那一段等于只说了一件事。这和坑 #19 是同一类错误——**把上下文
+    塞进 prompt 的机制，要先看塞进去的内容本身有没有意义。**
+
+    被代表的条数记在 `duplicates` 上：同一件事发生四次是四条独立记忆，
+    渲染时会说成「这样的事有 4 次」，信息没丢。
+
+    访问计数在这里记，所以检索**有副作用**。「只是看看」的调用用 `score_all`。
     """
     scored = score_all(store, query, card, now_seq, focus, similarity)
     # 同分按 id 排，保证全序。依赖 sort 的稳定性（即插入顺序）不算确定：
@@ -124,7 +137,18 @@ def retrieve(
     # 排序键里刻意**不**放 seq——recency 是 seq 的严格减函数，同分且 seq
     # 不同意味着另外三路正好补偿到小数点后若干位，那个分支实际不可达。
     scored.sort(key=lambda s: (-s.total, s.item.id))
-    top = scored[:k]
+
+    seen: dict[str, int] = {}
+    picked: list[Scored] = []
+    for s in scored:
+        if s.item.content in seen:
+            seen[s.item.content] += 1
+            continue
+        seen[s.item.content] = 0
+        if len(picked) < k:
+            picked.append(s)
+
+    top = [replace(s, duplicates=seen[s.item.content]) for s in picked]
     for s in top:
         s.item.access_count += 1
         s.item.last_access_seq = now_seq

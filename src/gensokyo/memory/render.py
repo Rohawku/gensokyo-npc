@@ -8,7 +8,8 @@
 
 from collections.abc import Sequence
 
-from gensokyo.memory.item import MemoryItem, Tier
+from gensokyo.memory.item import Tier
+from gensokyo.memory.retrieve import Scored
 
 _VAGUE: dict[str, str] = {
     "player_talked": "来访者跟我说过几句话",
@@ -28,18 +29,28 @@ _VAGUE: dict[str, str] = {
 有测试锁住这张表与 `SALIENCE_BASELINE` 的键集合一致。"""
 
 
-def render_recall(items: Sequence[MemoryItem]) -> list[str]:
+def render_recall(scored: Sequence[Scored]) -> list[str]:
     """活跃条目给原文；压缩条目按类合并成一条模糊印象。
 
     模糊印象排在原文之后：它们信息量低，放前面会占掉模型的注意力，而
     【你还记得】这一段的目的是让她说出**具体**的事。
+
+    同内容的条目在检索阶段已经合并成一条（见 `retrieve`），这里把被代表的
+    次数说出来——玩家投了 4 次赛钱，她该记得是 4 次而不是 1 次。
     """
-    vivid = [i.content for i in items if i.tier is Tier.ACTIVE]
+    vivid: list[str] = []
+    for s in scored:
+        if s.item.tier is not Tier.ACTIVE:
+            continue
+        if s.duplicates:
+            vivid.append(f"{s.item.content}（这样的事有 {s.duplicates + 1} 次）")
+        else:
+            vivid.append(s.item.content)
 
     counts: dict[str, int] = {}
-    for item in items:
-        if item.tier is Tier.COMPRESSED:
-            counts[item.kind] = counts.get(item.kind, 0) + 1
+    for s in scored:
+        if s.item.tier is Tier.COMPRESSED:
+            counts[s.item.kind] = counts.get(s.item.kind, 0) + 1 + s.duplicates
 
     vague: list[str] = []
     for kind, n in sorted(counts.items()):

@@ -3,11 +3,11 @@ from collections.abc import Callable
 from gensokyo.agent.policy import run_turn
 from gensokyo.agent.schema import NpcTurn, normalize_utterance
 from gensokyo.llm.client import LlmClient
-from gensokyo.memory.item import MemoryItem, MemoryStore
+from gensokyo.memory.item import MemoryStore
 from gensokyo.memory.pipeline import now_seq
 from gensokyo.memory.query import MEMORY_TOP_K, build_focus, build_query
 from gensokyo.memory.render import render_recall
-from gensokyo.memory.retrieve import retrieve
+from gensokyo.memory.retrieve import Scored, retrieve
 from gensokyo.world.defs import CharacterCard
 from gensokyo.world.engine import WorldEngine
 
@@ -52,10 +52,10 @@ class NpcAgent:
         self.spoken.clear()
         self._spoken_keys.clear()
 
-    def recall(self, player_utterance: str) -> list[MemoryItem]:
+    def recall(self, player_utterance: str) -> list[Scored]:
         """本回合召回的条目。**有副作用**（记一次访问），每回合只该调一次。"""
         obs = self.engine.observe(self.card.id)
-        scored = retrieve(
+        return retrieve(
             self.store,
             build_query(obs, player_utterance),
             self.card,
@@ -63,7 +63,6 @@ class NpcAgent:
             build_focus(obs),
             k=MEMORY_TOP_K,
         )
-        return [s.item for s in scored]
 
     def act(self, player_utterance: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
         # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
@@ -82,7 +81,7 @@ class NpcAgent:
             render_recall(recalled),
             on_chunk,
         )
-        turn.retrieved_memory_ids = [i.id for i in recalled]
+        turn.retrieved_memory_ids = [s.item.id for s in recalled]
 
         self.history.append(said)
         self.history.append(f"{self.card.name}：{turn.utterance}")
