@@ -1,0 +1,149 @@
+"""检索：四路信号融合，衰减率角色化。
+
+```
+score = w1·sim(query, item.content)
+      + w2·exp(-λ_npc · (now_seq - item.seq))
+      + w3·item.salience
+      + w4·relevance(item, focus)
+```
+
+基础形态取自 Generative Agents 的 retrieval score，本项目做了两处改动：
+
+**λ 与 salience 角色化。** 原文全局统一。这里芙兰 λ 大（忘得快）、魔理沙
+λ 小（记得谁欠她书）、灵梦居中，参数从人设推导而不是调出来的。这是差异化
+遗忘的实现点——数值一旦被调平，三个 NPC 的记忆表现就没差别了。
+
+**加入任务相关性项。** 纯语义与情感检索会捞出「有感情但对当前剧情无用」的
+条目。NPC 记忆要服务剧情推进，检索目标不只是像人。
+"""
+
+import math
+from dataclasses import dataclass
+
+from gensokyo.memory.item import MemoryItem, MemoryStore, Tier
+from gensokyo.memory.similarity import Similarity, bigram_cosine
+from gensokyo.world.defs import CharacterCard
+
+W_SIMILARITY = 1.0
+W_RECENCY = 1.0
+W_SALIENCE = 1.0
+W_RELEVANCE = 1.0
+"""四路等权。
+
+刻意不调权重：一旦开始调，就必须说清楚是照着什么指标调的，而 Phase B
+的记忆探针（事实召回 / 负例否认 / 矛盾检出）还没跑出基线。等权是可解释的
+出发点，调权重之前先有数字——否则调出来的是过拟合当前那几局对话。
+"""
+
+
+@dataclass(frozen=True)
+class Scored:
+    """带四路分解的检索结果。
+
+    分解是必需的而不是调试装饰：只看总分排序对不对的测试，在「四路里只有
+    一路真的起作用」的实现上也会通过。坑 #11 那批空转测试就是这么来的。
+    """
+
+    item: MemoryItem
+    similarity: float
+    recency: float
+    salience: float
+    relevance: float
+
+    @property
+    def total(self) -> float:
+        return (
+            W_SIMILARITY * self.similarity
+            + W_RECENCY * self.recency
+            + W_SALIENCE * self.salience
+            + W_RELEVANCE * self.relevance
+        )
+
+
+def recency(item: MemoryItem, now_seq: int, lambda_decay: float) -> float:
+    """exp(-λ·Δ)，Δ 的单位是**事件**而不是回合。
+
+    未来的条目（now_seq 小于 item.seq）钳到 1.0 而不是让指数爆掉：重建
+    存档时会短暂出现这种顺序。
+    """
+    gap = max(0, now_seq - item.seq)
+    return math.exp(-lambda_decay * gap)
+
+
+def relevance(item: MemoryItem, focus: frozenset[str]) -> float:
+    """任务相关性，纯规则：条目正文提到当前阶段关心的东西则为 1。
+
+    `focus` 是**中文名字**而不是内部 id——条目正文里也是中文（坑 #10），
+    两边必须用同一种表示才能匹配上。由 agent 层从引擎的任务状态构造。
+    """
+    return 1.0 if any(key and key in item.content for key in focus) else 0.0
+
+
+def score_all(
+    store: MemoryStore,
+    query: str,
+    card: CharacterCard,
+    now_seq: int,
+    focus: frozenset[str] = frozenset(),
+    similarity: Similarity = bigram_cosine,
+) -> list[Scored]:
+    """给所有非沉睡条目打分，不排序不截断。
+
+    沉睡条目排除在外是设计：它们只能被强线索召回（见 `recall_dormant`），
+    普通对话检索不到——这是芙兰那条线索的机制基础。
+    """
+    return [
+        Scored(
+            item=item,
+            similarity=similarity(query, item.content),
+            recency=recency(item, now_seq, card.memory.lambda_decay),
+            salience=item.salience,
+            relevance=relevance(item, focus),
+        )
+        for item in store.active()
+    ]
+
+
+def retrieve(
+    store: MemoryStore,
+    query: str,
+    card: CharacterCard,
+    now_seq: int,
+    focus: frozenset[str] = frozenset(),
+    k: int = 5,
+    similarity: Similarity = bigram_cosine,
+) -> list[Scored]:
+    """取分数最高的 k 条，并记一次访问。
+
+    访问计数会影响降级（常被想起的事不容易忘），所以检索**有副作用**。
+    这一点必须显式：一个「只是看看」的调用要用 `score_all`。
+    """
+    scored = score_all(store, query, card, now_seq, focus, similarity)
+    # 同分按 id 排，保证全序。依赖 sort 的稳定性（即插入顺序）不算确定：
+    # 重建存档时条目的插入顺序由动作日志决定，而记忆库也可能被压缩重排。
+    # 排序键里刻意**不**放 seq——recency 是 seq 的严格减函数，同分且 seq
+    # 不同意味着另外三路正好补偿到小数点后若干位，那个分支实际不可达。
+    scored.sort(key=lambda s: (-s.total, s.item.id))
+    top = scored[:k]
+    for s in top:
+        s.item.access_count += 1
+        s.item.last_access_seq = now_seq
+    return top
+
+
+def recall_dormant(store: MemoryStore, cues: frozenset[str], now_seq: int) -> list[MemoryItem]:
+    """强线索召回沉睡记忆。命中即转回活跃——想起来了就是想起来了。
+
+    `cues` 是当下出现的线索键（比如玩家刚交给她的物品 id），与条目自己声明的
+    `trigger_keys` 做**精确键匹配**而不是相似度：这条路径直接决定一条线索能
+    不能拿到（芙兰的那段往事），而可通关性不该依赖一个相似度阈值。坑 #6 是
+    「游戏做出来不可通关」，同类风险这里必须避开。
+    """
+    woken: list[MemoryItem] = []
+    for item in store.dormant():
+        if cues & set(item.trigger_keys):
+            item.tier = Tier.ACTIVE
+            item.access_count += 1
+            item.last_access_seq = now_seq
+            woken.append(item)
+    return woken

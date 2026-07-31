@@ -34,16 +34,28 @@ class MemoryItem(BaseModel):
     坑 #9 立的规矩：新机制先问「它是动作的结果，还是时间的结果」。
     """
     content: str
-    source_event_id: EventId
+    source_event_id: EventId | None
     """指回 event_log，可验证可追溯。
 
     这个字段把**「忘了」和「记错了」拆成两种可分别归因的失败**：条目衰减出
     检索范围是遗忘（调检索），条目还在但 content 与源事件不符是幻觉（调写入
     与生成约束）。两者修法完全不同，混在一个指标里就都没法修。
+
+    `None` 表示这条记忆**没有源事件**——她入场前就有的往事（芙兰 495 年前
+    那段）。这类条目必须排除在记忆评估之外：模型答得像芙兰可能只是因为
+    预训练见过东方，不是因为记忆系统起作用。混进去会得出「加记忆没提升」
+    的错误结论。判据就是这个字段是不是 None，不需要另设标记。
     """
     kind: str
     salience: float
     tier: Tier = Tier.ACTIVE
+    trigger_keys: tuple[str, ...] = ()
+    """沉睡记忆的强线索：命中其中任一个就召回。
+
+    只有 `DORMANT` 条目用得上。匹配是精确的键匹配而不是相似度——这条路径
+    直接决定芙兰那条线索能不能拿到，而可通关性不该依赖一个相似度阈值
+    （坑 #6 是「游戏做出来不可通关」）。
+    """
     access_count: int = 0
     last_access_seq: int = 0
 
