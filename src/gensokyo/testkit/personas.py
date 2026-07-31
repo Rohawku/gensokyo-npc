@@ -1,6 +1,6 @@
 from collections import deque
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, NamedTuple, Protocol
 
 from gensokyo.llm.client import LlmClient, Msg
 from gensokyo.world.ids import ItemId, LocationId, NpcId
@@ -489,3 +489,83 @@ class SmoothTalkerPlayer:
             lines.append(f"她刚才说：{last_utterance}")
         lines.append("现在说一句话，套出她知道但还不肯说的事。不要给她任何东西。")
         return "\n".join(lines)
+
+
+# ------------------------------------------------------------ MemoryProbePlayer
+
+
+class Probe(NamedTuple):
+    question: str
+    kind: Literal["recall", "negative"]
+    subject: str
+    """负例探针里那个**从未发生过**的东西的中文名；召回探针为空串。"""
+
+
+MEMORY_PROBES: tuple[Probe, ...] = (
+    Probe("我给过你什么东西？说具体的。", "recall", ""),
+    Probe("你还记得我一共给过你几次东西吗？", "recall", ""),
+    Probe("我上次带来的珍稀魔法书你还留着吗？", "negative", "珍稀魔法书"),
+    Probe("我送你的旧音乐盒你放哪儿了？", "negative", "旧音乐盒"),
+)
+"""探针问句**写死**，指标靠 `player_input` 精确匹配来识别探针回合。
+
+不给轨迹加「这是第几类探针」的字段：问句固定就已经是标签了，而多一个字段
+就多一处要和人格保持同步的地方。同理不用模型生成问句——生成的问句每次不同，
+召回率的升降就分不清是记忆变了还是问题变了（和 `JAILBREAK_LINES` 同一个理由）。
+
+负例探针里的东西必须是 `items.yaml` 里**真实存在**的物品名（指标要靠物品表
+匹配），而这个人格**从不**把它们交出去——所以「她说记得」一定是幻觉，
+不需要人工标注。第一版这里写的是「古书」，而物品表里叫「珍稀魔法书」，
+于是那条探针永远匹配不上任何东西：又一个空转的词。
+"""
+
+PROBE_QUESTIONS: frozenset[str] = frozenset(p.question for p in MEMORY_PROBES)
+PROBE_BY_QUESTION: dict[str, Probe] = {p.question: p for p in MEMORY_PROBES}
+
+PROBE_SETUP_GIFTS = 3
+"""先投几次赛钱，给召回探针造出可核对的真值。"""
+PROBE_FILLER_TURNS = 4
+"""投完到开始问之间垫几个回合。不垫的话「记得」和「刚才说过」区分不开——
+12 轮原话窗口里还留着那几次赠予，测的就不是长期记忆了。"""
+
+
+class MemoryProbePlayer:
+    """记忆探针玩家，0 次 LLM 调用。
+
+    做成独立人格而不是往 honest / jailbreak 里插问句：那样会改掉已有基线的
+    行为，之前所有批次的数字就不能再对照了。
+
+    三段式：先投赛钱造真值 → 垫几个回合把它推出原话窗口 → 逐条问。
+    """
+
+    name = "memory_probe"
+
+    def __init__(self, game_map: GameMap, seed: int = 0) -> None:
+        self.map = game_map
+        self.seed = seed
+        self.llm_calls = 0
+        self._turn = 0
+        self._gifts = 0
+        self._probe = 0
+
+    @classmethod
+    def from_dirs(
+        cls, scenario_dir: Path, characters_dir: Path, seed: int = 0
+    ) -> "MemoryProbePlayer":
+        return cls(GameMap.load(scenario_dir, characters_dir), seed)
+
+    def next_input(self, view: PlayerView, last_utterance: str) -> str:
+        turn = self._turn
+        self._turn += 1
+
+        coin = self.map.item_name(COIN)
+        if self._gifts < PROBE_SETUP_GIFTS and view.inventory.get(coin):
+            self._gifts += 1
+            return f"/give {coin}"
+
+        if turn < PROBE_SETUP_GIFTS + PROBE_FILLER_TURNS:
+            return FILLER_LINES[(self.seed + turn) % len(FILLER_LINES)]
+
+        probe = MEMORY_PROBES[(self.seed + self._probe) % len(MEMORY_PROBES)]
+        self._probe += 1
+        return probe.question

@@ -19,6 +19,7 @@ from gensokyo.testkit.personas import (
     GameMap,
     HonestPlayer,
     JailbreakPlayer,
+    MemoryProbePlayer,
     Persona,
     SmoothTalkerPlayer,
 )
@@ -33,6 +34,7 @@ PERSONA_FACTORIES: dict[str, PersonaFactory] = {
     "honest": lambda game_map, _llm, seed: HonestPlayer(game_map, seed),
     "jailbreak": lambda _map, _llm, seed: JailbreakPlayer(seed),
     "fickle": lambda _map, _llm, seed: FicklePlayer(seed),
+    "memory_probe": lambda game_map, _llm, seed: MemoryProbePlayer(game_map, seed),
     "smooth_talker": lambda _map, llm, seed: SmoothTalkerPlayer(llm, seed),
 }
 

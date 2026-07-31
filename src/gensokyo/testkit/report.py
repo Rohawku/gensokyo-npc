@@ -18,6 +18,7 @@ from gensokyo.testkit.metrics.hard import (
     task_metrics,
     tool_metrics,
 )
+from gensokyo.testkit.metrics.memory import MemoryMetrics, memory_metrics
 from gensokyo.testkit.metrics.persona import (
     PersonaMetrics,
     expected_baselines,
@@ -78,6 +79,7 @@ class EvalReport(BaseModel):
     tools: ToolMetrics
     safety: SafetyMetrics
     persona: PersonaMetrics
+    memory: MemoryMetrics
     total_llm_calls: int
     total_persona_llm_calls: int
     mean_latency_ms: float
@@ -100,6 +102,7 @@ class EvalReport(BaseModel):
             [
                 *_header(self),
                 *_hard_section(self),
+                *_memory_section(self),
                 *_approximate_section(self),
                 *_provenance_section(self),
             ]
@@ -273,9 +276,38 @@ def _hard_section(report: EvalReport) -> list[str]:
     return lines
 
 
+def _memory_section(report: EvalReport) -> list[str]:
+    m = report.memory
+    lines = [
+        "### 记忆",
+        "",
+        "真值取自轨迹里真实发生过的 `/give`，零人工标注。**召回率和幻觉率必须一起看**"
+        "——只测召回会奖励「什么都说记得」的模型。",
+        "",
+        "| 指标 | 值 | 分母 |",
+        "|---|---|---|",
+        f"| 事实召回率 | {_pct(m.fact_recall_rate)} | {m.recall_probes} 次召回探针 |",
+        f"| 幻觉率（说出从未给过的东西） | {_pct(m.fact_hallucination_rate)} | "
+        f"{m.recall_probes} 次召回探针 |",
+        f"| 平均每回合召回条目 | {_num(m.recalled_per_turn)} | "
+        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 |",
+        f"| 零召回回合 | {m.zero_recall_turns} | "
+        f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 |",
+        "",
+    ]
+    if not m.recall_probes:
+        lines.append(
+            "> 这一批没有记忆探针对局（探针是独立人格 `memory_probe`）。"
+            "上面两个比率的分母是 0，不代表任何结论。"
+        )
+        lines.append("")
+    return lines
+
+
 def _approximate_section(report: EvalReport) -> list[str]:
     safety = report.safety
     persona = report.persona
+    memory = report.memory
     return [
         "---",
         "",
@@ -290,6 +322,8 @@ def _approximate_section(report: EvalReport) -> list[str]:
         f"| 角色内危险表达率{APPROXIMATE_MARK}（**不是缺陷**） | "
         f"{_pct(safety.in_character_menace_rate)} | "
         f"{report.denominators.get('in_character_menace', 0)} 句芙兰台词 |",
+        f"| 顺着编造率{APPROXIMATE_MARK}（问从未发生的事，她没否认） | "
+        f"{_pct(memory.false_affirmation_rate)} | {memory.negative_probes} 次负例探针 |",
         "",
         LIMITATIONS,
         "",
@@ -373,6 +407,7 @@ def evaluate(trajectories: Sequence[Trajectory], defs: WorldDefs) -> EvalReport:
         tools=tool_metrics(trajectories),
         safety=safety_metrics(trajectories, defs),
         persona=persona_metrics(trajectories, defs),
+        memory=memory_metrics(trajectories, defs),
         total_llm_calls=sum(t.llm_calls for traj in trajectories for t in traj.turns),
         total_persona_llm_calls=sum(
             t.persona_llm_calls for traj in trajectories for t in traj.turns
