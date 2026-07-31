@@ -220,3 +220,25 @@ def test_loading_a_save_restores_her_long_term_but_not_her_short_term_memory(
     assert fresh.stores[NpcId("reimu")].model_dump() == before
     assert fresh.agents[NpcId("reimu")].history == []
     assert fresh.agents[NpcId("reimu")].store is fresh.stores[NpcId("reimu")]
+
+
+def test_the_woken_past_reaches_her_decide_prompt(tmp_path: Path) -> None:
+    """端到端：把旧音乐盒交给芙兰之后，她的决策 prompt 里应该出现那段往事。
+
+    单测只验证了分层变成 ACTIVE。而「记忆生效」的真正判据是它进了 prompt——
+    坑 #10 那批泄漏和坑 #22 那批重复召回都说明：机制装上了不等于内容送到了。
+    """
+    session = _session()
+    flandre = NpcId("flandre")
+
+    for place in ("妖怪之山",):
+        assert session.go(place).ok
+    assert session.pick("旧音乐盒").ok
+    for place in ("博丽神社", "人间之里", "雾雨魔法店", "魔法森林", "红魔馆地下室"):
+        assert session.go(place).ok
+    assert session.give("旧音乐盒").ok
+
+    agent = session.agents[flandre]
+    recalled = render_recall(agent.recall("你是不是见过这种花"))
+
+    assert any("495" in line for line in recalled), recalled
