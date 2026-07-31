@@ -28,7 +28,6 @@ memory:
     player_arrived: 2.5
     player_gave_item: 2.0
     player_talked: 2.0
-    player_left: 2.0
   reflection_threshold: 8.0
 
 emotion:

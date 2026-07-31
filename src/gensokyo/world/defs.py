@@ -8,7 +8,6 @@ SALIENCE_BASELINE: dict[str, float] = {
     "player_talked": 0.1,
     "npc_talked": 0.05,
     "player_arrived": 0.3,
-    "player_left": 0.25,
     "revealed_info": 0.7,
     "asked_player": 0.15,
     "spellcard_duel": 0.9,
@@ -23,6 +22,11 @@ SALIENCE_BASELINE: dict[str, float] = {
 而这张表要在加载角色卡时就用上。它和 `rules.py` 的 `ATTITUDE_DELTA` /
 `EMOTION_DELTA` 是同一类东西——事件到数值的静态表。一处定义，
 `memory/salience.py` 读它，不另抄一份。
+
+**这张表只登记 W1 真的会产生、且她真的感知得到的事件。** 曾经有一条
+`player_left`：移动事件的 `location` 是终点（`_emit` 取动作后的位置），
+所以原地点的 NPC 收不到「有人走了」，那个键永远命中不了——又是一条空转
+的配置，而它就写在这个校验器的下一行。
 """
 
 
