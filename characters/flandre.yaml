@@ -19,11 +19,16 @@ persona:
       - 兴奋时重复同一个词
 
 memory:
+  # 全场最大的衰减率：她记不住事，这是玩法而不是缺陷——玩家要通关就得
+  # 摸索怎么把一个记不清事的吸血鬼的记忆挖出来。
   lambda_decay: 0.25
   salience_multipliers:
-    receive_gift: 2.0
-    someone_plays_with_me: 2.5
-    magic_theory: 0.3
+    # 有人来看她是天大的事。这一项和 lambda_decay 共同定义了她的记忆人格：
+    # 日常琐事忘得飞快，但「有人来陪我」和「带来了没见过的东西」留得住。
+    player_arrived: 2.5
+    player_gave_item: 2.0
+    player_talked: 2.0
+    player_left: 2.0
   reflection_threshold: 8.0
 
 emotion:

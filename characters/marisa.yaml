@@ -19,11 +19,15 @@ persona:
       - 提到别人的功劳时会顺手往自己身上揽
 
 memory:
+  # 全场最小的衰减率：她记得谁欠她书。
   lambda_decay: 0.04
   salience_multipliers:
-    receive_gift: 2.0
-    magic_theory: 2.0
-    money_related: 0.8
+    # 交易相关的事她记得最清——给了什么、她拿了什么。
+    player_gave_item: 1.8
+    npc_took_item: 1.6
+    # 闲聊她不放在心上。
+    player_talked: 0.5
+    player_arrived: 0.8
   reflection_threshold: 3.0
 
 emotion:

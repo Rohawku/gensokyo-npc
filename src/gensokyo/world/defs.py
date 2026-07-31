@@ -1,6 +1,29 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from gensokyo.world.ids import FactId, ItemId, LocationId, NpcId
+
+SALIENCE_BASELINE: dict[str, float] = {
+    "player_gave_item": 0.5,
+    "npc_took_item": 0.6,
+    "player_talked": 0.1,
+    "npc_talked": 0.05,
+    "player_arrived": 0.3,
+    "player_left": 0.25,
+    "revealed_info": 0.7,
+    "asked_player": 0.15,
+    "spellcard_duel": 0.9,
+    "item_broken": 0.8,
+    "quest_advance": 0.4,
+    "memory_lost": 0.6,
+}
+"""事件类型的记忆显著性基线。键是**规范键**——角色卡的
+`salience_multipliers` 只能用这些，`MemoryCfg` 会校验。
+
+放在这里而不是 `memory/`：`world/` 不许 import 项目内其他模块（取舍 #1），
+而这张表要在加载角色卡时就用上。它和 `rules.py` 的 `ATTITUDE_DELTA` /
+`EMOTION_DELTA` 是同一类东西——事件到数值的静态表。一处定义，
+`memory/salience.py` 读它，不另抄一份。
+"""
 
 
 class StrictModel(BaseModel):
@@ -25,11 +48,31 @@ class PersonaCfg(StrictModel):
 
 
 class MemoryCfg(StrictModel):
-    """W1 载入但不使用，W2 的分层记忆会读它。"""
-
     lambda_decay: float
+    """时间衰减率，单位是**事件**而不是回合。芙兰大（忘得快），
+    魔理沙小（记得谁欠她书），灵梦居中。参数从人设推导。"""
     salience_multipliers: dict[str, float] = Field(default_factory=dict)
     reflection_threshold: float
+
+    @field_validator("salience_multipliers")
+    @classmethod
+    def _keys_must_be_known(cls, value: dict[str, float]) -> dict[str, float]:
+        """键拼错必须加载失败。
+
+        这三张角色卡原先写的是 `receive_gift`、`someone_plays_with_me`、
+        `magic_theory`——**一个都对不上真实事件名**（真实的是
+        `player_gave_item`）。dict 字段的键拼错不会被 `extra="forbid"` 拦住，
+        系数于是静默退回 1.0，「芙兰对陪玩敏感」这个人设差异从来没生效过。
+        表现是「三个 NPC 的记忆行为一模一样」而不是加载失败，正是坑 #5
+        那类最难查的 bug。
+        """
+        unknown = sorted(set(value) - set(SALIENCE_BASELINE))
+        if unknown:
+            raise ValueError(
+                f"salience_multipliers 含未知键：{'、'.join(unknown)}。"
+                f"可用的键只有：{'、'.join(sorted(SALIENCE_BASELINE))}"
+            )
+        return value
 
 
 class EmotionMode(StrictModel):
