@@ -17,7 +17,7 @@ def load_dotenv(path: Path) -> None:
     不引入 python-dotenv：这是唯一需要它的地方，而快速开始文档里
     「cp .env.example .env 然后 make play」必须真的能跑通。
     """
-    if not path.exists():
+    if not path.is_file():
         return
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
@@ -144,7 +144,7 @@ def main() -> None:
                 continue
             if cmd == "load":
                 path = _save_path(arg)
-                if not path.exists():
+                if not path.is_file():
                     print(f"\n（没有找到存档 {path.name}）")
                     continue
                 n = session.load(path)

@@ -33,6 +33,13 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.format]
+exclude = ["*.md"]
+# ruff 0.16 起会格式化 markdown 里的 python 代码块。文档里的片段是**引用**
+# 而不是可运行代码：`docs/engineering-log.md` 里刻意对齐的注释被重排过，
+# 一处 `tool_calls=decision.tool_calls`（关键字参数）还被改成了赋值语句，
+# 把说明本身改成了错的。
+
 [tool.mypy]
 python_version = "3.12"
 files = ["src/gensokyo"]
