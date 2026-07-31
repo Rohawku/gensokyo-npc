@@ -255,3 +255,98 @@ def test_she_remembers_what_happened_after_she_moved() -> None:
 
     assert "花就在这儿" in remembered
     assert "在店里吗" not in remembered
+
+
+def _walk(eng: WorldEngine, *places: str) -> None:
+    for place in places:
+        assert eng.apply(Action(actor="player", tool="move", args={"to": place})).ok, place
+
+
+def _fetch_music_box_and_visit_flandre(eng: WorldEngine) -> None:
+    """全程只用动作把强线索送到芙兰手上。
+
+    **不许直接给 inventory 赋值。** 那不进动作日志，回放时 give_item 会因为
+    「你身上没有那么多」而失败，于是「她想起来了」重现不出来——这条测试
+    第一版就是这么写错的，和坑 #9 那次一字不差。
+
+    走妖怪之山拿旧音乐盒而不是去无缘塚拿忘却之花：无缘塚会吸走记忆，
+    路过一趟就要多考虑遗忘计数，与这条测试要验证的东西无关。
+    """
+    _walk(eng, "youkai_mountain")
+    assert eng.apply(Action(actor="player", tool="take_item", args={"item": "old_music_box"})).ok
+    _walk(
+        eng,
+        "hakurei_shrine",
+        "human_village",
+        "kirisame_magic_shop",
+        "forest_of_magic",
+        "scarlet_devil_basement",
+    )
+    assert eng.apply(Action(actor="player", tool="give_item", args={"item": "old_music_box"})).ok
+
+
+# ---------------------------------------------------------------- 沉睡的往事
+
+
+def test_flandres_past_starts_asleep_and_out_of_reach() -> None:
+    """角色卡声明的往事一开始就在库里，但普通对话检索不到。检索得到的话
+    「多聊几句她就想起 495 年前的事」，那条线索的玩法机制就没了。"""
+    defs = _defs()
+    stores = new_stores(defs)
+    flandre = stores[NpcId("flandre")]
+
+    seeds = [i for i in flandre.items if i.tier is Tier.DORMANT]
+    assert seeds, "芙兰的角色卡里声明了 dormant_memories，应该被播种进记忆库"
+    assert all(i.source_event_id is None for i in seeds)
+    assert flandre.active() == []
+
+
+def test_a_seeded_memory_is_excluded_from_evaluation_by_its_missing_source() -> None:
+    """种子记忆必须排除在记忆评估之外：模型答得像芙兰可能只是因为预训练见过
+    东方，不是因为记忆系统起作用。判据就是 source_event_id 是不是 None。"""
+    defs = _defs()
+    for store in new_stores(defs).values():
+        for item in store.items:
+            assert (item.source_event_id is None) == (item.kind == "dormant_past")
+
+
+def test_bringing_her_the_right_thing_wakes_the_past() -> None:
+    """强线索是**她收到过的东西**。received_items 是世界状态、由动作日志推导，
+    所以「她想起来了」和其他一切一样能被精确回放。"""
+    eng = _engine()
+    flandre = NpcId("flandre")
+    stores = new_stores(eng.defs)
+
+    _fetch_music_box_and_visit_flandre(eng)
+    absorb(eng, stores)
+
+    woken = [i for i in stores[flandre].items if i.kind == "dormant_past"]
+    assert all(i.tier is Tier.ACTIVE for i in woken)
+    assert "495" in " ".join(i.content for i in woken)
+
+
+def test_the_wrong_gift_leaves_the_past_asleep() -> None:
+    eng = _engine()
+    flandre = NpcId("flandre")
+    stores = new_stores(eng.defs)
+
+    _walk(eng, "human_village", "kirisame_magic_shop", "forest_of_magic", "scarlet_devil_basement")
+    assert eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"})).ok
+    absorb(eng, stores)
+
+    assert all(i.tier is Tier.DORMANT for i in stores[flandre].items if i.kind == "dormant_past")
+
+
+def test_a_woken_past_survives_save_and_load() -> None:
+    """「她想起来了」若不能回放，玩家读档后那条线索的前提就消失了——
+    坑 #8 那类组合死锁的完美温床。"""
+    eng = _engine()
+    flandre = NpcId("flandre")
+    _fetch_music_box_and_visit_flandre(eng)
+    live = new_stores(eng.defs)
+    absorb(eng, live)
+
+    _, rebuilt = rebuild(eng.state.action_log, eng.defs)
+
+    assert rebuilt[flandre].model_dump() == live[flandre].model_dump()
+    assert rebuilt[flandre].active(), "读档后她又想不起来了"

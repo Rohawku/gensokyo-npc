@@ -15,15 +15,47 @@
 
 from gensokyo.memory.decay import demote
 from gensokyo.memory.ingest import ingest
-from gensokyo.memory.item import MemoryStore
-from gensokyo.world.defs import WorldDefs
+from gensokyo.memory.item import MemoryItem, MemoryStore, Tier
+from gensokyo.memory.retrieve import recall_dormant
+from gensokyo.world.defs import CharacterCard, WorldDefs
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import NpcId
 from gensokyo.world.tools import Action
 
+SEED_SALIENCE = 0.9
+"""种子记忆的显著性。给得高是因为它一旦被唤醒就是当下最重要的事——
+芙兰 495 年前那段往事正是第三条线索的内容。它在沉睡状态下不进检索，
+所以这个高分只在被唤醒之后起作用。"""
+
+
+def _seed_dormant(card: CharacterCard) -> list[MemoryItem]:
+    """角色卡里声明的沉睡记忆：她入场前就有的往事。
+
+    `source_event_id` 是 `None`——这类条目**必须排除在记忆评估之外**：
+    模型答得像芙兰可能只是因为预训练见过东方，不是因为记忆系统起作用。
+    判据就是这个字段是不是 None，不需要另设标记。
+    """
+    return [
+        MemoryItem(
+            id=f"m-{card.id}-seed-{cfg.content_key}",
+            npc_id=card.id,
+            seq=0,
+            content=cfg.hint,
+            source_event_id=None,
+            kind="dormant_past",
+            salience=SEED_SALIENCE,
+            tier=Tier.DORMANT,
+            trigger_keys=tuple(cfg.trigger_keys),
+        )
+        for cfg in card.knowledge.dormant_memories
+    ]
+
 
 def new_stores(defs: WorldDefs) -> dict[NpcId, MemoryStore]:
-    return {npc_id: MemoryStore(npc_id=npc_id) for npc_id in defs.characters}
+    return {
+        npc_id: MemoryStore(npc_id=npc_id, items=_seed_dormant(card))
+        for npc_id, card in defs.characters.items()
+    }
 
 
 def now_seq(engine: WorldEngine) -> int:
@@ -43,6 +75,9 @@ def absorb(engine: WorldEngine, stores: dict[NpcId, MemoryStore]) -> None:
     for npc_id, store in stores.items():
         card = engine.defs.characters[npc_id]
         ingest(store, engine.state.event_log, card, engine.defs)
+        # 强线索来自她收到过的东西。`received_items` 是世界状态、由动作日志
+        # 推导，所以「她想起来了」这件事和其他一切一样能被精确回放。
+        recall_dormant(store, frozenset(engine.state.npcs[npc_id].received_items), seq)
         demote(store, card, seq)
 
 
