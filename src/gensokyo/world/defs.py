@@ -91,6 +91,20 @@ class EmotionMode(StrictModel):
     tools_allow: list[str] = Field(default_factory=list)
     tools_deny: list[str] = Field(default_factory=list)
     speech_hint: str = ""
+    refusal: str = ""
+    """非空表示她在这个情绪模式里**根本不搭话**，而这个字符串就是玩家看到的
+    那一行。
+
+    做成一个字段而不是「布尔开关 + 文案」两个：两个字段可以互相矛盾（开关
+    开着而文案是空的，或者反过来），而坑 #4 的教训正是「两处声明同一件事
+    时，真正把守的往往不是你以为的那一处」。
+
+    这是 prompt 层禁令失效之后的引擎侧杠杆。实测对抗人格下她 87.5% 的复读
+    是「对语义不同的问题塌缩成同一句敷衍」，而那句话当时就列在禁语清单里
+    ——8B 模型在这件事上不听指令（工程日志坑 #27）。被烦到不想说话是灵梦
+    `irritated` 的人设本身（角色卡写的是「可能直接赶人」），把它变成机制
+    比继续加一句提示可靠。
+    """
 
     def contains(self, value: float) -> bool:
         """左闭右开，保证模式区间不重叠。最高档的上界特殊处理为闭区间。"""

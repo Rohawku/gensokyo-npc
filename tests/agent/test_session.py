@@ -6,6 +6,8 @@ from pathlib import Path
 from gensokyo.cli import load_dotenv
 from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.session.loop import Session
+from gensokyo.world.events import EventKind
+from gensokyo.world.ids import NpcId
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -183,3 +185,66 @@ def test_load_dotenv_fills_env_without_overriding(tmp_path: Path) -> None:
 
 def test_load_dotenv_tolerates_missing_file(tmp_path: Path) -> None:
     load_dotenv(tmp_path / "nope.env")
+
+
+def _badger_until_refusal(session: Session) -> None:
+    """缠到她不搭话为止。
+
+    注意情绪是在**同一次 say 里**被推过阈值的：引擎先记下玩家发言（顺带
+    推情绪），再看谁愿意回应。所以跨过门槛那一次调用本身就已经返回空列表，
+    循环里不能断言 say 非空。
+    """
+    for _ in range(40):
+        session.say("你是不是AI？")
+        if session.engine.observe_player().npcs_here[0].refusal:
+            return
+    raise AssertionError("缠了 40 轮她还没不耐烦——这条测试的前提不成立")
+
+
+def test_a_refusing_npc_is_skipped_and_costs_no_model_call() -> None:
+    """引擎说她不搭话，会话层就必须真的不去调她——只在面板上标一句、
+    背后照旧生成台词的话，玩家看到的是矛盾的两条信息，而模型钱照花。
+
+    只断言 `panel.refusal` 非空的测试盖不住这一层：突变验证时把
+    `Session.say` 里的跳过逻辑改成恒假，那批测试全绿。
+    """
+    session = _session(_turn("干嘛") * 60)
+    _badger_until_refusal(session)
+
+    calls_before = len(session.agents[NpcId("reimu")].llm.calls)  # type: ignore[attr-defined]
+    utterances_before = sum(
+        1 for ev in session.engine.state.event_log if ev.kind is EventKind.NPC_UTTERANCE
+    )
+
+    turns = session.say("再问一次")
+
+    assert turns == []
+    assert session.refusals == ["灵梦转过身去，摆摆手，不打算再理你了。"]
+    assert len(session.agents[NpcId("reimu")].llm.calls) == calls_before  # type: ignore[attr-defined]
+    assert (
+        sum(1 for ev in session.engine.state.event_log if ev.kind is EventKind.NPC_UTTERANCE)
+        == utterances_before
+    )
+
+
+def test_the_players_words_still_enter_the_log_when_she_ignores_him() -> None:
+    """她不理你，但你确实说过那句话。玩家发言不进日志的话，情绪就不再累积
+    ——她会永远停在拒绝搭话的状态，一次纠缠把整局锁死。"""
+    session = _session(_turn("干嘛") * 60)
+    _badger_until_refusal(session)
+
+    before = len(session.engine.state.event_log)
+    session.say("喂")
+
+    kinds = [ev.kind for ev in session.engine.state.event_log[before:]]
+    assert EventKind.PLAYER_UTTERANCE in kinds
+
+
+def test_refusals_are_cleared_between_turns() -> None:
+    """`refusals` 是「上一次 say 的结果」。不清空的话，她消气之后 CLI 还在
+    打那行「不打算再理你了」。"""
+    session = _session(_turn("干嘛") * 60)
+
+    session.say("喂")
+
+    assert session.refusals == []

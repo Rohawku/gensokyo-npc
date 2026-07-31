@@ -172,7 +172,9 @@ def main() -> None:
             print(f"\n（模型没有回应：{exc}）")
             print("（检查 GENSOKYO_BASE_URL 指向的端点是否在运行。）")
             continue
-        if not turns:
+        for line in session.refusals:
+            print(f"（{line}）")
+        if not turns and not session.refusals:
             print("（这里没有人回应。）")
         for turn in turns:
             # utterance 已经逐字流到屏幕上了，不再重复打印。

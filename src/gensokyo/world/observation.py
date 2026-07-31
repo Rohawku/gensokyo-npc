@@ -64,9 +64,12 @@ class NpcPanel(BaseModel):
     mode: str
     mode_hint: str = ""
     will_talk: bool = False
-    """她现在是否有话可说。机器可读的门槛信号，供玩家模拟器与指标使用。"""
-    """模式的中文说法。mode 是内部标识符（normal/calm/destructive），
-    不该出现在玩家屏幕上。"""
+    """她现在是否有线索可给。机器可读的门槛信号，供玩家模拟器与指标使用。"""
+    refusal: str = ""
+    """非空表示她这会儿不搭话，内容就是玩家看到的那一行。
+
+    与 `will_talk` 是两件不同的事：那个说「她有情报可给」，这个说
+    「她连话都不想跟你说」。"""
 
 
 class PlayerView(BaseModel):

@@ -628,6 +628,14 @@ class WorldEngine:
             for fid in npc.holds_facts
         )
 
+    def _refusal(self, npc_id: NpcId) -> str:
+        """当前情绪模式若声明了 refusal，她就不搭话，返回给玩家看的那一行。"""
+        npc = self.state.npcs[npc_id]
+        for mode in self.defs.characters[npc_id].emotion.modes:
+            if mode.name == npc.mode:
+                return mode.refusal
+        return ""
+
     def _player_objective(self) -> str:
         """玩家可见的当前目标。门槛一开就要变，否则玩家会一直投赛钱
         而不知道该开口问了。"""
@@ -687,6 +695,7 @@ class WorldEngine:
                     mode=self.state.npcs[nid].mode,
                     mode_hint=self._mode_hint(nid),
                     will_talk=self._will_talk(nid),
+                    refusal=self._refusal(nid),
                 )
                 for nid in self._npcs_here()
             ],

@@ -27,6 +27,9 @@ class Session:
         self.stores = stores
         """记忆库归会话所有，agent 只持引用。读档要整批换掉（`rebuild`
         产出的是新对象），归属放在这里换起来只有一处。"""
+        self.refusals: list[str] = []
+        """上一次 `say` 里拒绝搭话的 NPC 各自的那一行。调用方要显示它——
+        没有它，「她不理你」和「程序卡住了」在屏幕上分不开。"""
 
     @classmethod
     def create(cls, scenario_dir: Path, characters_dir: Path, llm: LlmClient) -> "Session":
@@ -74,9 +77,19 @@ class Session:
         return None
 
     def say(self, text: str, on_chunk: Callable[[str], None] | None = None) -> list[NpcTurn]:
+        """玩家说话。**发言先入库，再看谁愿意回应。**
+
+        情绪模式声明了 refusal 的 NPC 直接跳过——她的发言不会进 event_log，
+        因为她确实没说话。玩家仍然看到一行说明（`panel.refusal`），否则
+        「她不理你」和「程序卡住了」在屏幕上分不开。
+        """
         self.engine.apply(Action(actor="player", tool="say", args={"text": text}))
+        self.refusals = []
         turns: list[NpcTurn] = []
         for panel in self.engine.observe_player().npcs_here:
+            if panel.refusal:
+                self.refusals.append(panel.refusal)
+                continue
             if turns and on_chunk is not None:
                 # 多个 NPC 同场时台词会流到同一行上。只有这里知道说话人
                 # 换了，所以分隔符必须在这里发出去。

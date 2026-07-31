@@ -152,3 +152,73 @@ def test_every_character_card_declares_a_talk_delta() -> None:
         if "player_talked" not in card.emotion.event_deltas
     ]
     assert missing == []
+
+
+def test_an_irritated_reimu_refuses_to_talk_at_all() -> None:
+    """prompt 层的禁令在 8B 模型上到顶了：实测对抗人格下她 87.5% 的复读是
+    「对语义不同的问题塌缩成同一句敷衍」，而那句话当时就列在禁语清单里。
+
+    被缠得太久就不搭话是她 irritated 的人设本身（角色卡写的是「可能直接
+    赶人」），把它变成机制比继续加一句提示可靠。"""
+    eng = _engine()
+    reimu = NpcId("reimu")
+    assert eng.observe_player().npcs_here[0].refusal == ""
+
+    _badger(eng, 40)
+
+    panel = eng.observe_player().npcs_here[0]
+    assert eng.state.npcs[reimu].mode == "irritated"
+    assert "不打算再理你" in panel.refusal
+
+
+def test_backing_off_lets_her_cool_down_and_talk_again() -> None:
+    """必须能恢复，否则一次纠缠就把这局锁死了——坑 #6 是「游戏做出来不可
+    通关」，这类单向门是同一个风险。停下来不说话就够了（衰减是无条件的）。"""
+    eng = _engine()
+    _badger(eng, 40)
+    assert eng.observe_player().npcs_here[0].refusal
+
+    for _ in range(30):
+        eng.tick()
+
+    assert eng.observe_player().npcs_here[0].refusal == ""
+
+
+def test_giving_her_something_also_calms_her_down() -> None:
+    """投赛钱让灵梦消气（取舍 #5），所以它同样是一条恢复路径。"""
+    eng = _engine()
+    _badger(eng, 40)
+    assert eng.observe_player().npcs_here[0].refusal
+
+    for _ in range(6):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+        eng.tick()
+
+    assert eng.observe_player().npcs_here[0].refusal == ""
+
+
+def test_the_golden_path_never_makes_her_refuse() -> None:
+    """honest 局 21 回合里只搭话 15 次。正常玩法把她逼到不搭话的话，
+    通关率会直接掉——这条测试和 test_the_golden_path_amount_of_talking...
+    守的是同一条线，但断言的是玩家可见的后果。"""
+    eng = _engine()
+
+    for _ in range(15):
+        eng.apply(Action(actor="player", tool="say", args={"text": "结界怎么了"}))
+        eng.tick()
+        assert eng.observe_player().npcs_here[0].refusal == ""
+
+
+def test_only_modes_that_declare_a_refusal_stop_the_conversation() -> None:
+    """芙兰的 destructive 是兴奋到失控，她话更多而不是更少；魔理沙的
+    excited 同理。一个字段同时表达「拒绝」和「拒绝时说什么」，所以不会出现
+    「开关开着而文案是空的」这种自相矛盾的配置（坑 #4 的教训）。"""
+    defs = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
+    refusing = {
+        (str(npc_id), mode.name)
+        for npc_id, card in defs.characters.items()
+        for mode in card.emotion.modes
+        if mode.refusal
+    }
+
+    assert refusing == {("reimu", "irritated")}

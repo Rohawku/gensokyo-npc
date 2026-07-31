@@ -74,8 +74,18 @@ def _say_records(
 ) -> list[TurnRecord]:
     after = session.view().model_dump()
     if not turns:
-        # 对着空房间说话也要留一条记录，否则轨迹里会凭空少一个回合。
-        return [TurnRecord(tick=view.tick, player_input=text, kind="say", view_after=after)]
+        # 对着空房间说话、或者在场的人都不搭话，也要留一条记录，否则轨迹里
+        # 会凭空少一个回合。`refused` 让指标能把「她不理你」和「屋里没人」
+        # 分开——前者是情绪机制生效，后者是玩家走错了地方。
+        return [
+            TurnRecord(
+                tick=view.tick,
+                player_input=text,
+                kind="say",
+                refused=bool(session.refusals),
+                view_after=after,
+            )
+        ]
 
     # session.say 按 view.npcs_here 的顺序逐个让 NPC 发言，说话本身不改变
     # 任何人的位置，所以这里的 npc_id 对得上。

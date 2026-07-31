@@ -21,6 +21,11 @@ class TurnRecord(BaseModel):
     """指令的失败原因。多数是 ErrorCode 的值，也有 runner 自己的
     unknown_command / missing_arg——两者都是稳定字符串，指标能统计。"""
 
+    refused: bool = False
+    """在场的 NPC 因为情绪模式而拒绝搭话。
+
+    和「屋里没人」必须分开：前者是情绪状态机在起作用，后者是玩家走错了
+    地方。合成一个「没有台词」会让指标读不出区别。"""
     npc_id: str | None = None
     utterance: str = ""
     thought: str = ""
