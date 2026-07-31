@@ -22,9 +22,8 @@ def _store(npc: str) -> MemoryStore:
 
 
 def _absorb(eng: WorldEngine, store: MemoryStore, defs: WorldDefs) -> None:
-    """把 event_log 里她感知到的部分全部摄入。测试里位置不变，可以整段喂。"""
-    npc = eng.state.npcs[store.npc_id]
-    ingest(store, eng.state.event_log, defs.characters[store.npc_id], npc.location, defs)
+    """整段日志喂进去。ingest 是事件日志的纯函数，喂多少次都一样。"""
+    ingest(store, eng.state.event_log, defs.characters[store.npc_id], defs)
 
 
 def test_a_gift_becomes_a_memory_with_the_chinese_item_name() -> None:

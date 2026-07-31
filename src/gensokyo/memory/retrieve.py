@@ -143,6 +143,7 @@ def recall_dormant(store: MemoryStore, cues: frozenset[str], now_seq: int) -> li
     for item in store.dormant():
         if cues & set(item.trigger_keys):
             item.tier = Tier.ACTIVE
+            item.recalled = True
             item.access_count += 1
             item.last_access_seq = now_seq
             woken.append(item)

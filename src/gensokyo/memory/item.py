@@ -49,6 +49,14 @@ class MemoryItem(BaseModel):
     kind: str
     salience: float
     tier: Tier = Tier.ACTIVE
+    recalled: bool = False
+    """曾被强线索召回过。被召回的记忆不再降级——想起来了就是想起来了。
+
+    没有这个标记的话，`demote` 会在下一次降级时按保留强度把它打回沉睡
+    （种子记忆的 `seq` 是 0，强度早就跌到底），于是芙兰那条线索会在玩家
+    刚问出口的下一个回合又消失。召回由玩家交给她的物品触发，而那是动作
+    日志里的一条记录，所以这个标记能被精确回放。
+    """
     trigger_keys: tuple[str, ...] = ()
     """沉睡记忆的强线索：命中其中任一个就召回。
 

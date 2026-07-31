@@ -14,12 +14,14 @@ from gensokyo.memory.item import MemoryItem, MemoryStore
 from gensokyo.memory.salience import salience_for
 from gensokyo.world.defs import CharacterCard, WorldDefs
 from gensokyo.world.events import Event, EventKind
-from gensokyo.world.ids import NpcId
+from gensokyo.world.ids import LocationId, NpcId
 
 _MAX_QUOTE = 40
 """进记忆的引文长度上限。检索会把命中的条目原样拼进 prompt，一条 200 字的
 台词能把整个【你还记得】段落撑爆，而说话阶段的 prompt 短小正是拆两阶段
 买到的东西（坑 #1）。"""
+
+_MOVE_TOOLS = frozenset({"move", "travel_to"})
 
 _TOOL_KEYS: dict[tuple[str, bool], str] = {
     ("give_item", True): "player_gave_item",
@@ -55,7 +57,7 @@ def _classify(event: Event, npc_id: NpcId) -> str:
         return "quest_advance"
 
     tool = str(event.payload.get("tool", ""))
-    if tool in {"move", "travel_to"}:
+    if tool in _MOVE_TOOLS:
         # `_emit` 取动作**之后**的位置，所以移动事件落在终点：玩家出现在
         # 她这里就是「来了」。反过来「有人走了」在 W1 观测不到——原地点
         # 收不到那条事件，所以没有 player_left 这个键。
@@ -107,17 +109,27 @@ def ingest(
     store: MemoryStore,
     events: Iterable[Event],
     card: CharacterCard,
-    npc_location: str,
     defs: WorldDefs,
 ) -> list[MemoryItem]:
     """把她感知到的事件写进记忆库，返回本次新增的条目。
 
-    必须**每回合调用**、传入当时的 `npc_location`：位置会变，事后拿最终
-    位置回溯整段历史会把她当时不在场的事也记进去。重建存档走
-    `memory.rebuild`，那里是逐动作重放的，位置自然是对的。
+    **她当时在哪，从事件流自己推导**，不接受一个「当前位置」参数。她的每次
+    移动都在日志里，起点是 `card.home`（`build_initial_state` 如此放置），
+    所以位置是事件日志的函数。
+
+    这一点是必须的而不是洁癖：若按「调用时刻的位置」过滤，实时摄入（每回合
+    一次，位置已是回合末）和存档重建（逐动作重放，位置是每步当时的）会在
+    「她本回合移动过」的情况下给出不同的记忆库——存档于是背叛玩家的实际
+    经历，正是坑 #9 那个「读档让丢掉的线索凭空回来」的同类。现在 `ingest`
+    是事件日志的纯函数，实时与重建同一条码路，不可能分叉。
+
+    重复摄入靠 `store.ingested_events` 挡住，所以整段日志喂多少次都一样。
     """
     added: list[MemoryItem] = []
+    npc_location: LocationId = card.home
     for event in events:
+        if event.actor == str(store.npc_id) and event.payload.get("tool") in _MOVE_TOOLS:
+            npc_location = LocationId(str(event.payload["to"]))
         if event.id in store.ingested_events:
             continue
         if event.location != npc_location:
