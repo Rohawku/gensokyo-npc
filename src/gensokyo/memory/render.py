@@ -13,7 +13,6 @@ from gensokyo.memory.retrieve import Scored
 
 _VAGUE: dict[str, str] = {
     "player_talked": "来访者跟我说过几句话",
-    "npc_talked": "我跟他说过几句话",
     "player_gave_item": "来访者给过我东西",
     "npc_took_item": "我从他那里拿过东西",
     "player_arrived": "他来过",

@@ -6,7 +6,6 @@ SALIENCE_BASELINE: dict[str, float] = {
     "player_gave_item": 0.5,
     "npc_took_item": 0.6,
     "player_talked": 0.1,
-    "npc_talked": 0.05,
     "player_arrived": 0.3,
     "revealed_info": 0.7,
     "asked_player": 0.15,
@@ -23,10 +22,17 @@ SALIENCE_BASELINE: dict[str, float] = {
 `EMOTION_DELTA` 是同一类东西——事件到数值的静态表。一处定义，
 `memory/salience.py` 读它，不另抄一份。
 
-**这张表只登记 W1 真的会产生、且她真的感知得到的事件。** 曾经有一条
-`player_left`：移动事件的 `location` 是终点（`_emit` 取动作后的位置），
-所以原地点的 NPC 收不到「有人走了」，那个键永远命中不了——又是一条空转
-的配置，而它就写在这个校验器的下一行。
+**这张表只登记 W1 真的会产生、她真的感知得到、而且召回出来有用的事件。**
+删过两条：
+
+- `player_left`：移动事件的 `location` 是终点（`_emit` 取动作后的位置），
+  所以原地点的 NPC 收不到「有人走了」，那个键永远命中不了。
+- `npc_talked`（她自己说过的话）：实测它会把复读**喂回去**。越狱局里召回给
+  她的第一条是「我说：『你到底想干啥？』（这样的事有 6 次）」，而同一个
+  prompt 里的禁语清单说的是「这些一句都不许再说」——同一份内容出现两次、
+  指令相反。她最近说过什么，12 轮原话窗口和禁语清单都已经覆盖了，记忆层
+  在这件事上加不了任何信息。「我告诉过他哪条情报」是另一个键
+  （`revealed_info`），那个留着，它防的是把同一条线索说两遍。
 """
 
 

@@ -86,18 +86,27 @@ def test_the_same_event_is_never_ingested_twice() -> None:
     assert len(store.items) == 1
 
 
-def test_she_remembers_her_own_words_but_not_another_npcs() -> None:
+def test_nobodys_utterances_but_the_players_become_memories() -> None:
+    """她自己说过的话**不进记忆库**。实测那会把复读喂回去：越狱局里召回给她的
+    第一条是「我说：『你到底想干啥？』（这样的事有 6 次）」，而同一个 prompt
+    里的禁语清单说的是「这些一句都不许再说」——同一份内容出现两次、指令相反。
+
+    她最近说过什么，12 轮原话窗口和禁语清单都已经覆盖了，记忆层加不了信息。
+    「我告诉过他哪条情报」走另一个键（revealed_info），那个留着。
+
+    别的 NPC 说的话也不进：同场时她听得见，但 W1 没为此设计基线。
+    """
     eng = _engine()
     store = _store("reimu")
     eng.state.npcs[NpcId("marisa")].location = eng.state.npcs[NpcId("reimu")].location
 
     eng.apply(Action(actor="reimu", tool="say", args={"text": "有事说事"}))
     eng.apply(Action(actor="marisa", tool="say", args={"text": "就是这样"}))
+    eng.apply(Action(actor="player", tool="say", args={"text": "结界怎么了"}))
     _absorb(eng, store, eng.defs)
 
-    assert len(store.items) == 1
-    assert store.items[0].kind == "npc_talked"
-    assert "有事说事" in store.items[0].content
+    assert [i.kind for i in store.items] == ["player_talked"]
+    assert "结界怎么了" in store.items[0].content
 
 
 def test_salience_differs_by_character_for_the_same_event() -> None:

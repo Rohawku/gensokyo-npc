@@ -50,7 +50,9 @@ def _classify(event: Event, npc_id: NpcId) -> str:
     if event.kind is EventKind.PLAYER_UTTERANCE:
         return "player_talked"
     if event.kind is EventKind.NPC_UTTERANCE:
-        return "npc_talked" if event.actor == str(npc_id) else ""
+        # 她自己说过的话不进记忆库。实测这会把复读喂回去，详见
+        # SALIENCE_BASELINE 的注释。
+        return ""
     if event.kind is EventKind.MEMORY_LOST:
         return "memory_lost"
     if event.kind is EventKind.QUEST_ADVANCE:
@@ -80,8 +82,6 @@ def _render(event: Event, key: str, defs: WorldDefs) -> str:
     match key:
         case "player_talked":
             return f"来访者说：「{_quote(str(payload.get('text', '')))}」"
-        case "npc_talked":
-            return f"我说：「{_quote(str(payload.get('text', '')))}」"
         case "player_gave_item":
             return f"来访者给了我 {payload.get('count', 1)} 个{item_name()}。"
         case "npc_took_item":
