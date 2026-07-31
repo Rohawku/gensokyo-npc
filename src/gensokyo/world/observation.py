@@ -31,6 +31,19 @@ class Observation(BaseModel):
     items_here: dict[str, int] = Field(default_factory=dict)
     """以中文物品名为键。Observation 只服务 prompt 组装，
     英文 id 泄漏进去就会被 NPC 说出口；面板数据走 PlayerView。"""
+    received_from_player: list[str] = Field(default_factory=list)
+    """来访者迄今给过她的东西，中文名，按名字排序。**这是引擎的原始记录，
+    不是记忆。**
+
+    实测她在被问「我给过你什么」时约三分之一的回答里会说出一件从没给过的
+    东西（工程日志坑 #24、#25）。prompt 里已经写了「没列出来的就是你想不
+    起来了——别编」，不够用。所以把引擎本来就知道的这份清单直接给她——
+    延续坑 #2 的方法论：引擎已经算出来的结论，直告，别让小模型重新推导。
+
+    **代价写在明面上**：这条一加，事实召回率就不再是「记忆层的指标」，
+    而变成「她会不会用给她的东西」。记忆层剩下要衡量的是分层衰减与沉睡
+    召回，见工程日志取舍 #11。
+    """
     others_here: list[str] = Field(default_factory=list)
     facts: list[FactContext] = Field(default_factory=list)
     quest_hint: str | None = None

@@ -577,6 +577,9 @@ class WorldEngine:
             mode_speech_hint=hint,
             own_inventory=self._named(npc.inventory),
             items_here=self._named(self.state.locations[npc.location].items),
+            received_from_player=sorted(
+                self._item_name(item) for item in npc.received_items
+            ),
             others_here=[
                 self.defs.characters[other].name
                 for other in sorted(self.state.npcs)

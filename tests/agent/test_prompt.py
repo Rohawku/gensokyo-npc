@@ -243,3 +243,56 @@ def test_speak_prompt_lists_her_own_recent_lines_to_avoid_repeating() -> None:
     assert "一句都不许再说" in user
     assert "你管的太多了。" in user
     assert user.index("一句都不许再说") > user.index("【现在说话】")
+
+
+def test_decide_prompt_states_exactly_what_she_has_received() -> None:
+    """实测她在「我给过你什么」这类问题上约三分之一的回答里会说出一件从没
+    给过的东西（坑 #24、#25）。prompt 里那句「别编」已经存在而不够用，所以
+    把引擎本来就知道的清单直告——延续坑 #2 的方法论。
+
+    「除这些之外他什么都没给过你」这半句是关键：只给正面清单的话，模型仍然
+    可以在清单之外补一件，因为没人说过清单是完整的。"""
+    eng = _engine()
+    for _ in range(2):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_decide_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "到目前为止只有：赛钱" in user
+    assert "除这些之外他什么都没给过你" in user
+
+
+def test_decide_prompt_says_so_when_he_has_given_nothing() -> None:
+    """空手来是最常见的情况。这一段若在空清单时整段消失，模型又回到「没人
+    说过他没给过东西」的状态，而那正是编造的温床。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_decide_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+
+    assert "他到现在什么都没给过你" in user
+
+
+def test_the_received_list_never_leaks_item_ids() -> None:
+    """这一段是新增的一处散文来源。坑 #10 清了四轮内部标识符泄漏，每加一段
+    进 prompt 的文本都要重新查一遍。
+
+    只查这一段而不是整个 prompt：【输出格式】那段示例里的
+    `{"item": "offering_coin"}` 是模型必须原样填进 JSON 的参数，
+    属于既有的、刻意的例外。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_decide_messages(
+        card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
+    )[-1].content
+    section = user.split("【来访者给过你的东西】")[1].split("【")[0]
+
+    assert "赛钱" in section
+    assert "offering_coin" not in section
