@@ -32,6 +32,8 @@ emotion:
   decay_per_tick: 0.02
   event_deltas:
     player_gave_item: 0.15
+    # 聊得起来她就越说越起劲，但比不上真拿到东西。
+    player_talked: 0.04
   modes:
     - name: normal
       range: [0.0, 0.75]

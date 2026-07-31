@@ -32,6 +32,9 @@ emotion:
   decay_per_tick: 0.02
   event_deltas:
     player_gave_item: 0.18
+    # 她被关了 495 年，有人陪着说话本身就让她越来越兴奋。这是全场最高的
+    # 一档：陪她玩久了她会自己兴奋到失控，而 destructive 才解锁 break_item。
+    player_talked: 0.05
   modes:
     - name: calm
       range: [0.0, 0.7]

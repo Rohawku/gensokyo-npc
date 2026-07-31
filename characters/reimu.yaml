@@ -33,6 +33,10 @@ emotion:
   event_deltas:
     # 灵梦爱钱。收到赛钱让她没那么烦，而不是更烦。
     player_gave_item: -0.10
+    # 一直在她耳边说话才是烦躁的来源。只比 decay_per_tick 高一点：
+    # 正常玩法（21 回合里只搭话 15 次）到不了 irritated，连续纠缠
+    # 二十几轮会到，停下来不说话她就慢慢消气。
+    player_talked: 0.05
   modes:
     - name: normal
       range: [0.0, 0.6]

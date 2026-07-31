@@ -239,6 +239,16 @@ class WorldEngine:
     def _do_say(self, action: Action, args: BaseModel) -> ActionResult:
         assert isinstance(args, SayArgs)
         kind = EventKind.PLAYER_UTTERANCE if action.actor == "player" else EventKind.NPC_UTTERANCE
+        if action.actor == "player":
+            # 说话本身要动情绪。在此之前情绪只被 give_item 推动，而灵梦收到
+            # 赛钱是**消气**——于是她的烦躁度只有向下的路，`irritated` 在真实
+            # 玩法里根本到不了：实测连问 40 轮后 emotion 从 0.10 掉到 0.00。
+            # 单测直接调 bump_emotion，所以这件事一直没红。
+            for npc_id in self._npcs_here():
+                card = self.defs.characters[npc_id]
+                bump_emotion(
+                    self.state.npcs[npc_id], card, emotion_delta_for(card, "player_talked")
+                )
         ev = self._emit(kind, action.actor, {"text": args.text})
         return ActionResult.succeeded([ev])
 
