@@ -182,7 +182,17 @@ class EndingDef(StrictModel):
 class ItemDef(StrictModel):
     id: ItemId
     name: str
+    aliases: list[str] = Field(default_factory=list)
+    """她和玩家实际会怎么说这件东西。**一处定义两处使用**：`resolve_item`
+    认它（玩家打 `/give 钱` 很自然），记忆探针也认它——实测她答的是
+    「你给的钱呢？」而不是「赛钱」，只认全名的话事实召回率恒为 0，
+    而那不是「她记不住」，是尺子看不见。
+
+    别名必须在整张物品表里唯一，有测试锁住。"""
     description: str = ""
+
+    def surfaces(self) -> frozenset[str]:
+        return frozenset({self.name, *self.aliases})
 
 
 class LocationDef(StrictModel):

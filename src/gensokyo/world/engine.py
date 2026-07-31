@@ -425,7 +425,7 @@ class WorldEngine:
         """把玩家输入的中文物品名或英文 id 解析成 ItemId。
         面板显示中文，输入却只认英文 id 会把玩家训练成敲英文。"""
         for item_id, item in self.defs.items.items():
-            if text in (item.name, item_id):
+            if text == item_id or text in item.surfaces():
                 return item_id
         return None
 

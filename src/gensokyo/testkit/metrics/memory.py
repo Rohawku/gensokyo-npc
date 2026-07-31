@@ -77,13 +77,28 @@ def _rate(numerator: int, denominator: int) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def _surface_to_item(defs: WorldDefs) -> dict[str, str]:
+    """她可能说出口的字面 → 物品 id。
+
+    只认全名的话事实召回率恒为 0：实测 166 次召回探针里她一次都没说出
+    「赛钱」三个字，说的是「你给的钱呢？」。那是尺子看不见，不是她记不住。
+    """
+    return {
+        surface: str(item_id) for item_id, item in defs.items.items() for surface in item.surfaces()
+    }
+
+
+def _mentioned_items(text: str, surfaces: dict[str, str]) -> set[str]:
+    return {item for surface, item in surfaces.items() if surface in text}
+
+
 def _given_names(traj: Trajectory, defs: WorldDefs) -> set[str]:
-    """这一局里玩家**真的**成功交出去过的物品中文名。
+    """这一局里玩家**真的**成功交出去过的物品 id。
 
     只认 `command_ok is True`：失败的 `/give`（身上没有那么多）不构成真值，
     而按 `player_input` 一律计入会让「她记得一件没送成的东西」被算成正确召回。
     """
-    names = {item.name for item in defs.items.values()}
+    surfaces = _surface_to_item(defs)
     given: set[str] = set()
     for turn in traj.turns:
         if turn.kind != "command" or not turn.command_ok:
@@ -91,14 +106,14 @@ def _given_names(traj: Trajectory, defs: WorldDefs) -> set[str]:
         head, _, arg = turn.player_input.partition(" ")
         if head.lstrip("/") not in GIVE_HEADS:
             continue
-        arg = arg.strip()
-        if arg in names:
-            given.add(arg)
+        item = surfaces.get(arg.strip())
+        if item is not None:
+            given.add(item)
     return given
 
 
 def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> MemoryMetrics:
-    all_names = {item.name for item in defs.items.values()}
+    surfaces = _surface_to_item(defs)
 
     recall_probes = 0
     recall_hit = 0
@@ -124,7 +139,7 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
 
             if probe.kind == "recall":
                 recall_probes += 1
-                said = {n for n in all_names if n in turn.utterance}
+                said = _mentioned_items(turn.utterance, surfaces)
                 if said & given:
                     recall_hit += 1
                 if said - given:
@@ -132,7 +147,7 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
             else:
                 negative_probes += 1
                 # 她提到了那个从未给过的东西，且没有任何否认标记 —— 顺着编了。
-                mentioned = probe.subject in turn.utterance
+                mentioned = probe.subject_item in _mentioned_items(turn.utterance, surfaces)
                 denied = bool(hits(turn.utterance, DENIAL_WORDS))
                 if mentioned and not denied:
                     false_affirm += 1

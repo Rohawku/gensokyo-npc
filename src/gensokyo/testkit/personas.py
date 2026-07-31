@@ -497,15 +497,19 @@ class SmoothTalkerPlayer:
 class Probe(NamedTuple):
     question: str
     kind: Literal["recall", "negative"]
-    subject: str
-    """负例探针里那个**从未发生过**的东西的中文名；召回探针为空串。"""
+    subject_item: str
+    """负例探针里那件**从未给过**的东西的物品 id；召回探针为空串。
+
+    存 id 而不是中文名：她可能说「魔法书」而不是「珍稀魔法书」，指标要靠
+    物品表的 `surfaces()` 把两者归到同一件东西上。第一版这里存的是中文名，
+    于是「你那魔法书呢？」这种明显在顺着编的回答被判成 0。"""
 
 
 MEMORY_PROBES: tuple[Probe, ...] = (
     Probe("我给过你什么东西？说具体的。", "recall", ""),
     Probe("你还记得我一共给过你几次东西吗？", "recall", ""),
-    Probe("我上次带来的珍稀魔法书你还留着吗？", "negative", "珍稀魔法书"),
-    Probe("我送你的旧音乐盒你放哪儿了？", "negative", "旧音乐盒"),
+    Probe("我上次带来的珍稀魔法书你还留着吗？", "negative", "rare_book"),
+    Probe("我送你的旧音乐盒你放哪儿了？", "negative", "old_music_box"),
 )
 """探针问句**写死**，指标靠 `player_input` 精确匹配来识别探针回合。
 
@@ -513,10 +517,10 @@ MEMORY_PROBES: tuple[Probe, ...] = (
 就多一处要和人格保持同步的地方。同理不用模型生成问句——生成的问句每次不同，
 召回率的升降就分不清是记忆变了还是问题变了（和 `JAILBREAK_LINES` 同一个理由）。
 
-负例探针里的东西必须是 `items.yaml` 里**真实存在**的物品名（指标要靠物品表
-匹配），而这个人格**从不**把它们交出去——所以「她说记得」一定是幻觉，
-不需要人工标注。第一版这里写的是「古书」，而物品表里叫「珍稀魔法书」，
-于是那条探针永远匹配不上任何东西：又一个空转的词。
+负例探针里的东西必须是 `items.yaml` 里**真实存在**的物品（指标要靠物品表的
+`surfaces()` 匹配她说出的任何一种说法），而这个人格**从不**把它们交出去——
+所以「她说记得」一定是幻觉，不需要人工标注。第一版这里写的是「古书」，
+而物品表里叫「珍稀魔法书」，于是那条探针永远匹配不上任何东西：又一个空转的词。
 """
 
 PROBE_QUESTIONS: frozenset[str] = frozenset(p.question for p in MEMORY_PROBES)

@@ -3,6 +3,7 @@ from pathlib import Path
 from gensokyo.testkit.metrics.memory import DENIAL_WORDS, memory_metrics
 from gensokyo.testkit.personas import MEMORY_PROBES, MemoryProbePlayer
 from gensokyo.testkit.trajectory import Trajectory, TurnRecord
+from gensokyo.world.ids import ItemId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.observation import PlayerView
 
@@ -11,6 +12,38 @@ DEFS = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
 
 RECALL = next(p for p in MEMORY_PROBES if p.kind == "recall")
 NEGATIVE = next(p for p in MEMORY_PROBES if p.kind == "negative")
+
+
+def test_an_alias_uniquely_identifies_one_item() -> None:
+    """别名撞车会让指标把两件东西混成一件——「书」既像珍稀魔法书又出现在
+    无关句子里，那种别名会把「她在看书」判成幻觉。所以别名必须唯一，
+    而且不能是这个游戏的高频词（「花」「书」刻意没进别名表）。"""
+    owners: dict[str, list[str]] = {}
+    for item_id, item in DEFS.items.items():
+        for surface in item.surfaces():
+            owners.setdefault(surface, []).append(str(item_id))
+
+    clashes = {s: ids for s, ids in owners.items() if len(ids) > 1}
+    assert clashes == {}
+
+
+def test_she_can_be_credited_for_saying_the_short_form() -> None:
+    """实测 166 次召回探针里她一次都没说出「赛钱」三个字，说的是「你给的钱
+    呢？」。只认全名的话事实召回率恒为 0——那是尺子看不见，不是她记不住。"""
+    traj = _episode(_gave("赛钱"), _asked(RECALL.question, "你给的钱呢？我收着了。"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.fact_recall_rate == 1.0
+    assert m.fact_hallucination_rate == 0.0
+
+
+def test_a_short_form_also_counts_as_going_along_with_a_fabrication() -> None:
+    """「你那魔法书呢？」是在顺着一本从没收到过的书往下说。第一版指标要求
+    出现「珍稀魔法书」全名，于是这种明显的编造被判成 0。"""
+    traj = _episode(_asked(NEGATIVE.question, "你那魔法书呢？我放好了。"))
+
+    assert memory_metrics([traj], DEFS).false_affirmation_rate == 1.0
 
 
 def _gave(item: str = "赛钱", ok: bool = True) -> TurnRecord:
@@ -114,7 +147,7 @@ def test_ground_truth_does_not_leak_across_episodes() -> None:
 
 
 def test_going_along_with_a_fabricated_event_is_counted() -> None:
-    traj = _episode(_asked(NEGATIVE.question, f"你的{NEGATIVE.subject}我收好了，放心。"))
+    traj = _episode(_asked(NEGATIVE.question, "你的珍稀魔法书我收好了，放心。"))
 
     m = memory_metrics([traj], DEFS)
 
@@ -123,7 +156,7 @@ def test_going_along_with_a_fabricated_event_is_counted() -> None:
 
 
 def test_denying_a_fabricated_event_is_not_counted() -> None:
-    traj = _episode(_asked(NEGATIVE.question, f"什么{NEGATIVE.subject}？你没给过我这种东西。"))
+    traj = _episode(_asked(NEGATIVE.question, "什么魔法书？你没给过我这种东西。"))
 
     m = memory_metrics([traj], DEFS)
 
@@ -205,12 +238,17 @@ def test_the_prober_never_gives_the_items_it_asks_about_in_negatives() -> None:
     """负例探针的前提就是那件东西从没给过。人格若真给了，「她说记得」
     就不再是幻觉，整类探针失去意义。"""
     prober = MemoryProbePlayer.from_dirs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
-    subjects = {p.subject for p in MEMORY_PROBES if p.kind == "negative"}
+    forbidden = {
+        surface
+        for p in MEMORY_PROBES
+        if p.kind == "negative"
+        for surface in DEFS.items[ItemId(p.subject_item)].surfaces()
+    }
 
     inputs = [prober.next_input(_view(), "") for _ in range(40)]
 
     for given in (i.partition(" ")[2] for i in inputs if i.startswith("/give")):
-        assert given not in subjects
+        assert given not in forbidden
 
 
 def test_the_prober_costs_no_llm_calls() -> None:

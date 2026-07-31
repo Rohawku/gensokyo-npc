@@ -1,19 +1,32 @@
+# aliases 是「她/玩家实际会怎么说这件东西」。两处使用：
+#   1. resolve_item —— 玩家打 /give 钱 而不是 /give 赛钱 是很自然的事
+#   2. 记忆探针 —— 实测她答的是「你给的钱呢？」而不是「赛钱」，
+#      只认全名的话事实召回率恒为 0，那不是「她记不住」而是尺子看不见
+#
+# 别名必须在物品表里**唯一**（有测试锁住），而且不能是这个游戏的高频词：
+# 「花」只对应忘却之花，但整个剧情都在讲无缘塚的花，拿它当别名会把无关
+# 台词误判成幻觉；「书」同理，太容易出现在与物品无关的句子里。
 - id: offering_coin
   name: 赛钱
+  aliases: [钱, 香火钱]
   description: 一枚硬币。灵梦对此非常敏感。
 
 - id: rare_book
   name: 珍稀魔法书
+  aliases: [魔法书]
   description: 魔理沙一定会想要的东西。
 
 - id: magic_mushroom
   name: 魔法蘑菇
+  aliases: [蘑菇]
   description: 森林里采的，可做魔法材料。
 
 - id: withered_flower
   name: 忘却之花
+  aliases: [忘却花]
   description: 从无缘塚采下的花。靠近它时思绪会变得模糊。
 
 - id: old_music_box
   name: 旧音乐盒
+  aliases: [音乐盒]
   description: 不知何时被遗落在山上的音乐盒。曲调很旧。
