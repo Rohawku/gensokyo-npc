@@ -17,6 +17,15 @@ SPEAK_TOOLS = frozenset({"say"})
 FALLBACK_UTTERANCE = "……"
 _QUOTE_CHARS = "\"'「」“”"
 
+BAN_WINDOW = 24
+"""进禁语清单的台词条数上限，取最近的若干条。
+
+这是**prompt 体积的上限，不是记忆的时效**——「这句说过了」不会因为过了
+多久而变假。取 24 是为了覆盖一整局：实测 honest 局 21 回合里她只说了 15
+句话，所以整局的不重复台词一般装得下。上限只用来兜住一直玩下去的长会话，
+否则这一段会无限增长并把场景描述挤到注意力之外。
+"""
+
 
 def _describe(action: Action, result: ActionResult) -> str:
     """把执行结果翻成给模型看的自然语言。她要看着这个开口，
@@ -110,13 +119,23 @@ def _speak(
     npc_id: NpcId,
     thought: str,
     outcomes: list[str],
+    spoken: list[str],
     on_chunk: Callable[[str], None] | None,
 ) -> str:
-    """阶段二：看着实际结果说一句话，逐块流给调用方。"""
-    prefix = f"{card.name}："
-    recent_own = [line[len(prefix) :] for line in history if line.startswith(prefix)][-3:]
+    """阶段二：看着实际结果说一句话，逐块流给调用方。
+
+    `spoken` 由 `NpcAgent` 维护：本局说过的台词，已按标准化去重。这里
+    刻意不再从 `history` 切片——12 条的窗口只装得下 6 个回合，实测第 10
+    回合复读的正是早已滑出窗口的第 6 回合那句；而且切片本身可能全是同
+    一句话，于是「别再重复」这条约束的示例正在示范复读。
+    """
     messages = build_speak_messages(
-        card, engine.observe(npc_id), history, thought, outcomes, recent_own
+        card,
+        engine.observe(npc_id),
+        history,
+        thought,
+        outcomes,
+        spoken[-BAN_WINDOW:],
     )
 
     pieces: list[str] = []
@@ -139,6 +158,7 @@ def run_turn(
     engine: WorldEngine,
     llm: LlmClient,
     history: list[str],
+    spoken: list[str] | None = None,
     on_chunk: Callable[[str], None] | None = None,
 ) -> NpcTurn:
     """两阶段回合：先决策（短 JSON），再说话（流式散文）。
@@ -159,6 +179,7 @@ def run_turn(
         npc_id,
         decided.decision.thought if decided.decision is not None else "",
         decided.outcomes,
+        spoken or [],
         on_chunk,
     )
     calls = decided.llm_calls + 1

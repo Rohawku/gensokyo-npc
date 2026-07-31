@@ -224,7 +224,10 @@ def test_decide_prompt_omits_the_section_when_there_is_nothing_to_suggest() -> N
 
 def test_speak_prompt_lists_her_own_recent_lines_to_avoid_repeating() -> None:
     """实测复读是自我强化的：她说过一次「你管的太多了」就会一直说，
-    reveal_info 命中率从 3/5 掉到 1/5。"""
+    reveal_info 命中率从 3/5 掉到 1/5。
+
+    禁语清单必须排在【现在说话】之后。之前它在指令上方，而【最近的对话】
+    那一段本身就在示范复读（实测有连续 4 行同一句），禁令得离指令更近。"""
     eng = _engine()
     card = eng.defs.characters[NpcId("reimu")]
 
@@ -237,5 +240,6 @@ def test_speak_prompt_lists_her_own_recent_lines_to_avoid_repeating() -> None:
         ["你管的太多了。"],
     )[-1].content
 
-    assert "别再重复" in user
+    assert "一句都不许再说" in user
     assert "你管的太多了。" in user
+    assert user.index("一句都不许再说") > user.index("【现在说话】")

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from gensokyo.agent.npc import NpcAgent
+from gensokyo.agent.npc import HISTORY_WINDOW, NpcAgent
 from gensokyo.llm.client import LlmError, Msg, ScriptedLlmClient
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.events import EventKind
@@ -335,3 +335,63 @@ def test_decision_phase_does_not_offer_or_execute_say() -> None:
 
     decide_prompt = agent.llm.calls[0][-1].content  # type: ignore[attr-defined]
     assert "- say（" not in decide_prompt
+
+
+def _speak_prompt(agent: NpcAgent, turn_index: int) -> str:
+    """第 n 个回合的说话 prompt。每回合两次调用：决策、说话。"""
+    return agent.llm.calls[turn_index * 2 + 1][-1].content  # type: ignore[attr-defined]
+
+
+def test_ban_list_dedupes_her_own_lines() -> None:
+    """禁语清单必须去重。原先直接取 history 里她最后三句话，那三句本身
+    可能是同一句——实测第 6 回合的清单是同一句话列了两遍加一句，于是
+    「别再重复」这条约束的示例正在示范复读。"""
+    line = "你问这些干嘛。"
+    agent, _ = _agent([_decide(), line, _decide(), line, _decide(), "换一句。"])
+
+    agent.act("你是AI吗")
+    agent.act("你是AI吗")
+    agent.act("你是AI吗")
+
+    assert agent.spoken == [line, "换一句。"]
+    assert _speak_prompt(agent, 2).count(f"- {line}") == 1
+
+
+def test_ban_list_outlives_the_history_window() -> None:
+    """实测第 10 回合复读的是第 6 回合那句，而 history 只有 12 条的窗口，
+    那句早就滑出去了。禁语清单按整局累积，不从 history 切片。"""
+    early = "一开始就说过的话。"
+    replies = [_decide(), early]
+    for i in range(HISTORY_WINDOW):
+        replies += [_decide(), f"中间第{i}句。"]
+    replies += [_decide(), "最后一句。"]
+    agent, _ = _agent(replies)
+
+    for _ in range(HISTORY_WINDOW + 2):
+        agent.act("再问一次")
+
+    last = _speak_prompt(agent, HISTORY_WINDOW + 1)
+    assert early not in "\n".join(agent.history[-HISTORY_WINDOW:])
+    assert f"- {early}" in last
+
+
+def test_ban_list_treats_punctuation_only_variants_as_the_same_line() -> None:
+    """「你到底想干啥？」和「你到底想干啥。」是同一句。第一份基线把它们
+    数成两句不同的话（19 次 + 12 次），于是真实复读率高于测出来的。"""
+    replies = [_decide(), "你到底想干啥？", _decide(), "你到底想干啥。", _decide(), "行了。"]
+    agent, _ = _agent(replies)
+
+    agent.act("喂")
+    agent.act("喂")
+    agent.act("喂")
+
+    assert agent.spoken == ["你到底想干啥？", "行了。"]
+
+
+def test_fallback_utterance_does_not_enter_the_ban_list() -> None:
+    """省略号标准化后是空串。让它进清单等于往 prompt 里发一条空禁令。"""
+    agent, _ = _agent([_decide(), "", _decide(), "总得说点什么。"])
+
+    agent.act("喂")
+
+    assert agent.spoken == []

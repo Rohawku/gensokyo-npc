@@ -75,7 +75,9 @@ def build_speak_messages(
 ) -> list[Msg]:
     """说话阶段只带最少上下文：场景描述、物品清单、情报门槛都已经在
     决策阶段用过了，重复一遍只会拖慢 prompt 处理，而首字延迟正是
-    这次拆分要压下去的东西。"""
+    这次拆分要压下去的东西。
+
+    `recent_own` 是她本局说过的台词（已去重），作为禁语清单发下去。"""
     body = (
         _env()
         .get_template("npc_speak.jinja")

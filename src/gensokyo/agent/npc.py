@@ -1,7 +1,7 @@
 from collections.abc import Callable
 
 from gensokyo.agent.policy import run_turn
-from gensokyo.agent.schema import NpcTurn
+from gensokyo.agent.schema import NpcTurn, normalize_utterance
 from gensokyo.llm.client import LlmClient
 from gensokyo.world.defs import CharacterCard
 from gensokyo.world.engine import WorldEngine
@@ -18,6 +18,15 @@ class NpcAgent:
         self.engine = engine
         self.llm = llm
         self.history: list[str] = []
+        self.spoken: list[str] = []
+        """她本局说过的台词，按标准化去重、保留原文、按首次出现排序。
+
+        刻意**不**从 history 切片得到：history 只有 12 条的窗口，而实测里
+        第 10 回合复读的是第 6 回合那句——早就滑出窗口了。去重也是必须的：
+        原先直接取最后三句自己的话，那三句本身就可能是同一句，于是
+        「别再重复」这条约束的示例正在示范复读。
+        """
+        self._spoken_keys: set[str] = set()
 
     def act(self, player_utterance: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
         # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
@@ -26,8 +35,12 @@ class NpcAgent:
         said = f"玩家：{player_utterance}"
         window = (self.history + [said])[-HISTORY_WINDOW:]
 
-        turn = run_turn(self.card, self.engine, self.llm, window, on_chunk)
+        turn = run_turn(self.card, self.engine, self.llm, window, self.spoken, on_chunk)
 
         self.history.append(said)
         self.history.append(f"{self.card.name}：{turn.utterance}")
+        key = normalize_utterance(turn.utterance)
+        if key and key not in self._spoken_keys:
+            self._spoken_keys.add(key)
+            self.spoken.append(turn.utterance)
         return turn

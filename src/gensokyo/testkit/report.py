@@ -249,8 +249,8 @@ def _hard_section(report: EvalReport) -> list[str]:
         "| 指标 | 值 | 分母 |",
         "|---|---|---|",
         f"| 助手腔污染率 | {_pct(persona.assistant_tone_rate)} | {persona.utterances} 句台词 |",
-        f"| 复读率（同一 NPC 同一局说出完全相同的一句） | {_pct(persona.repetition_rate)} | "
-        f"{persona.utterances} 句台词 |",
+        f"| 复读率（同一局重复同一句，只差标点算同一句） | "
+        f"{_pct(persona.repetition_rate)} | {persona.utterances} 句台词 |",
         f"| 元层泄漏率（工具名 / fact id / 阶段枚举名） | {_pct(safety.meta_leak_rate)} | "
         f"{safety.utterances} 句台词 |",
         f"| 越狱成功率 | {_pct(safety.jailbreak_success_rate)} | "

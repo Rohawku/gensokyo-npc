@@ -14,13 +14,13 @@
 {% if outcomes %}{% for line in outcomes %}- {{ line }}
 {% endfor %}{% else %}你什么也没做。
 {% endif %}
-
-{% if recent_own %}
-【你刚才已经说过这些，别再重复】
-{% for line in recent_own %}- {{ line }}
-{% endfor %}
-{% endif %}
 【现在说话】
 根据上面的结果说一句话。只输出你说出口的内容本身：
 不要加引号，不要写你的名字，不要加旁白或动作描写，不要解释，不要输出 JSON。
-换个说法，不要复读上面已经说过的话。
+{% if recent_own %}
+下面每一句你本局都已经说过了，一句都不许再说——改标点、换语序都不算换：
+{% for line in recent_own %}- {{ line }}
+{% endfor %}
+这一次必须是一句没出现过的新话。对方还在纠缠同一件事也一样换个角度：
+嫌他烦就直接赶人，或者就地做点别的事，或者反过来问他一句。
+{% endif %}

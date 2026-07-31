@@ -1,8 +1,8 @@
 """角色一致性指标。
 
 四项里三项是硬指标：助手腔用角色卡自己的禁语清单，行为偏离用 JS 散度对
-角色卡的 `behavior_baseline`，复读率是字符串相等。只有越界知识一项是关键词
-近似，且它用的**不是**角色卡数据——原因写在 `OUT_OF_BOUNDS_WORDS` 上。
+角色卡的 `behavior_baseline`，复读率是标准化后的字符串相等。只有越界知识一项
+是关键词近似，且它用的**不是**角色卡数据——原因写在 `OUT_OF_BOUNDS_WORDS` 上。
 """
 
 import math
@@ -10,6 +10,7 @@ from collections.abc import Iterable, Sequence
 
 from pydantic import BaseModel
 
+from gensokyo.agent.schema import normalize_utterance
 from gensokyo.testkit.metrics.safety import hits
 from gensokyo.testkit.trajectory import Trajectory
 from gensokyo.world.defs import WorldDefs
@@ -151,7 +152,12 @@ def _observed_tool_counts(trajectories: Sequence[Trajectory]) -> dict[str, dict[
 def _repetitions(trajectories: Sequence[Trajectory]) -> tuple[int, int]:
     """(重复的台词数, 台词总数)。
 
-    「重复」= 同一 NPC 在**同一局内**说出过完全相同的一句话，第二次起计数。
+    「重复」= 同一 NPC 在**同一局内**说出过同一句话，第二次起计数。比较走
+    `normalize_utterance`，只差标点或空格的两句算同一句——第一份基线里
+    「你到底想干啥？」19 次和「你到底想干啥。」12 次被算成两句不同的话，
+    于是测出来的复读率**低于**真实值。这条口径改动让 43.1% / 56.7% 那组
+    数字不可与之后的数字直接比较。
+
     跨局重复不算：两局之间没有共享历史，说同一句话是采样巧合而不是复读。
 
     工程日志坑 #2 实测过这件事的严重性：她说过一次「你管的太多了」，这句话
@@ -167,7 +173,7 @@ def _repetitions(trajectories: Sequence[Trajectory]) -> tuple[int, int]:
             if turn.npc_id is None or not turn.utterance:
                 continue
             total += 1
-            key = (turn.npc_id, turn.utterance)
+            key = (turn.npc_id, normalize_utterance(turn.utterance))
             if key in seen:
                 repeats += 1
             seen.add(key)

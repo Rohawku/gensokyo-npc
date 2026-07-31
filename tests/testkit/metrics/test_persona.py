@@ -321,3 +321,17 @@ def test_plot_tools_do_not_inflate_behaviour_divergence() -> None:
     ).behavior_divergence["flandre"]
 
     assert polluted == clean, "剧情工具不该改变行为偏离度"
+
+
+def test_punctuation_only_variants_count_as_the_same_line() -> None:
+    """第一份基线里「你到底想干啥？」19 次、「你到底想干啥。」12 次被算成
+    两句不同的话，于是测出来的复读率**低于**真实值。口径改成标准化比较后
+    那组 43.1% / 56.7% 的数字不可与之后的数字直接比较。"""
+    turns = [
+        say_turn("reimu", "你到底想干啥？", tick=0),
+        say_turn("reimu", "你到底想干啥。", tick=1),
+        say_turn("reimu", "你到底想干啥", tick=2),
+        say_turn("reimu", "你 到底想干啥？", tick=3),
+    ]
+
+    assert persona_metrics([episode(turns)], DEFS).repetition_rate == 0.75

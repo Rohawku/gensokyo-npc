@@ -6,6 +6,17 @@ from pydantic import BaseModel, Field, ValidationError
 
 from gensokyo.world.tools import TOOL_REGISTRY, Action, ActionResult
 
+_TRAILING = " \t\r\n。，、！？…~～.,!?;:；：\"'「」『』（）()"
+
+
+def normalize_utterance(text: str) -> str:
+    """用于「这句是不是说过了」的比较。
+
+    只差一个标点的两句话是同一句：实测报告里「你到底想干啥？」19 次、
+    「你到底想干啥。」12 次被算成两句不同的话，于是真实复读率比测出来的高。
+    """
+    return text.strip().strip(_TRAILING).replace(" ", "")
+
 
 class TurnParseError(ValueError):
     pass
