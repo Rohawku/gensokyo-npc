@@ -53,11 +53,22 @@ def build_decide_messages(
     history: list[str],
     tools: list[ToolSpec],
     errors: list[str],
+    recalled: list[str] | None = None,
 ) -> list[Msg]:
+    """`recalled` 是本回合召回的记忆，已渲染成散文。
+
+    只进决策阶段，不进说话阶段：她要**据此决定做什么**（想起玩家给过东西
+    才会开口给线索），而说话阶段的 prompt 短小正是拆两阶段买到的东西。"""
     body = (
         _env()
         .get_template("npc_decide.jinja")
-        .render(obs=obs, history=history, tools=tools, errors=errors)
+        .render(
+            obs=obs,
+            history=history,
+            tools=tools,
+            errors=errors,
+            recalled=recalled or [],
+        )
     )
     return [
         Msg(role="system", content=build_system_prompt(card)),

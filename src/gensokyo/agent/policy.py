@@ -60,6 +60,7 @@ def _decide(
     llm: LlmClient,
     history: list[str],
     npc_id: NpcId,
+    recalled: list[str],
 ) -> _Decided:
     """阶段一：想什么、做什么。"""
     errors: list[str] = []
@@ -72,7 +73,7 @@ def _decide(
     while calls < MAX_LLM_CALLS:
         obs = engine.observe(npc_id)
         tools = [t for t in engine.available_tools(npc_id) if t.name not in SPEAK_TOOLS]
-        messages = build_decide_messages(card, obs, history, tools, errors)
+        messages = build_decide_messages(card, obs, history, tools, errors, recalled)
 
         raw = llm.complete(messages)
         calls += 1
@@ -159,6 +160,7 @@ def run_turn(
     llm: LlmClient,
     history: list[str],
     spoken: list[str] | None = None,
+    recalled: list[str] | None = None,
     on_chunk: Callable[[str], None] | None = None,
 ) -> NpcTurn:
     """两阶段回合：先决策（短 JSON），再说话（流式散文）。
@@ -169,7 +171,7 @@ def run_turn(
     started = time.monotonic()
     mode_before = engine.state.npcs[npc_id].mode
 
-    decided = _decide(card, engine, llm, history, npc_id)
+    decided = _decide(card, engine, llm, history, npc_id, recalled or [])
 
     utterance = _speak(
         card,

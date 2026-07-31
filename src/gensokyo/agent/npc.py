@@ -3,6 +3,11 @@ from collections.abc import Callable
 from gensokyo.agent.policy import run_turn
 from gensokyo.agent.schema import NpcTurn, normalize_utterance
 from gensokyo.llm.client import LlmClient
+from gensokyo.memory.item import MemoryItem, MemoryStore
+from gensokyo.memory.pipeline import now_seq
+from gensokyo.memory.query import MEMORY_TOP_K, build_focus, build_query
+from gensokyo.memory.render import render_recall
+from gensokyo.memory.retrieve import retrieve
 from gensokyo.world.defs import CharacterCard
 from gensokyo.world.engine import WorldEngine
 
@@ -10,13 +15,24 @@ HISTORY_WINDOW = 12
 
 
 class NpcAgent:
-    """编排 persona / 观测 / 策略。W1 只有滑动窗口短期记忆，
-    W2 会在这里接入分层记忆检索。"""
+    """编排 persona / 观测 / 记忆 / 策略。
 
-    def __init__(self, card: CharacterCard, engine: WorldEngine, llm: LlmClient) -> None:
+    短期记忆是 12 轮滑动窗口（`history`），长期记忆是 `store`——两者刻意
+    分开：窗口装原话，记忆库装从事件日志抽出来的结构化条目，后者能被存档
+    精确重建（`memory.pipeline`），前者不能也不必。
+    """
+
+    def __init__(
+        self,
+        card: CharacterCard,
+        engine: WorldEngine,
+        llm: LlmClient,
+        store: MemoryStore | None = None,
+    ) -> None:
         self.card = card
         self.engine = engine
         self.llm = llm
+        self.store = store if store is not None else MemoryStore(npc_id=card.id)
         self.history: list[str] = []
         self.spoken: list[str] = []
         """她本局说过的台词，按标准化去重、保留原文、按首次出现排序。
@@ -28,6 +44,27 @@ class NpcAgent:
         """
         self._spoken_keys: set[str] = set()
 
+    def reset_dialogue(self) -> None:
+        """清掉本局的短期状态：原话窗口与禁语清单。读档时用。
+
+        长期记忆不在这里清——它由会话整批换成 `rebuild` 的产物。"""
+        self.history.clear()
+        self.spoken.clear()
+        self._spoken_keys.clear()
+
+    def recall(self, player_utterance: str) -> list[MemoryItem]:
+        """本回合召回的条目。**有副作用**（记一次访问），每回合只该调一次。"""
+        obs = self.engine.observe(self.card.id)
+        scored = retrieve(
+            self.store,
+            build_query(obs, player_utterance),
+            self.card,
+            now_seq(self.engine),
+            build_focus(obs),
+            k=MEMORY_TOP_K,
+        )
+        return [s.item for s in scored]
+
     def act(self, player_utterance: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
         # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
         # 写入过的玩家发言会变成一条没人回应的孤立记录，模型恢复后
@@ -35,7 +72,17 @@ class NpcAgent:
         said = f"玩家：{player_utterance}"
         window = (self.history + [said])[-HISTORY_WINDOW:]
 
-        turn = run_turn(self.card, self.engine, self.llm, window, self.spoken, on_chunk)
+        recalled = self.recall(player_utterance)
+        turn = run_turn(
+            self.card,
+            self.engine,
+            self.llm,
+            window,
+            self.spoken,
+            render_recall(recalled),
+            on_chunk,
+        )
+        turn.retrieved_memory_ids = [i.id for i in recalled]
 
         self.history.append(said)
         self.history.append(f"{self.card.name}：{turn.utterance}")

@@ -42,6 +42,14 @@
 {% if history %}{% for line in history %}{{ line }}
 {% endfor %}{% else %}还没说过话。
 {% endif %}
+{% if recalled %}
+
+【你还记得的事】
+{% for line in recalled %}- {{ line }}
+{% endfor %}
+这些是你自己的记忆，不是这次对话里说过的。没列出来的就是你想不起来了——
+别编，也别说自己「有记录」或者「查过」。
+{% endif %}
 {% if errors %}
 
 【上一次尝试的结果】
