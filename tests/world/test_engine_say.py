@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.events import EventKind
 from gensokyo.world.ids import NpcId
@@ -222,3 +224,125 @@ def test_only_modes_that_declare_a_refusal_stop_the_conversation() -> None:
     }
 
     assert refusing == {("reimu", "irritated")}
+
+
+def _warning(eng: WorldEngine) -> str:
+    return eng.observe_player().npcs_here[0].mood_warning
+
+
+def test_she_telegraphs_before_she_stops_talking() -> None:
+    """从「懒散」直接跳到「转身走开」是断崖式的，玩家不知道自己踩到了什么。
+    引擎里已经有同一套做法的先例——无缘塚的遗忘机制会提前说「再在这里待
+    2 步」。**可预告的惩罚才是机制，不可预告的是陷阱。**"""
+    eng = _engine()
+    assert _warning(eng) == ""
+
+    warned_at = None
+    for i in range(40):
+        _badger(eng, 1)
+        if eng.observe_player().npcs_here[0].refusal:
+            break
+        if _warning(eng) and warned_at is None:
+            warned_at = i
+
+    assert warned_at is not None, "她一路走到不搭话都没给过预警"
+
+
+def test_the_countdown_is_accurate_to_the_turn() -> None:
+    """倒计时必须按**回合内的时序**算，不能按「每回合净增多少」除一除。
+
+    一个回合里的顺序是「玩家发言推高情绪 → 判定模式 → 回合末衰减」，所以
+    翻脸发生在发言那一刻，那一次的衰减还没扣。第一版按净增算，屏幕上写着
+    「再缠 3 次」而她下一回合就翻脸了——预警比没有预警更糟，因为它给了一个
+    错误的安全感。
+
+    这条测试断言的是 `[3, 2, 1]` 而不是「单调下降」：只要单调的话，
+    `[3]` 后面直接翻脸也算通过，而那正是第一版的样子。
+    """
+    eng = _engine()
+    seen: list[int] = []
+    for _ in range(40):
+        _badger(eng, 1)
+        warning = _warning(eng)
+        if warning:
+            seen.append(int("".join(c for c in warning if c.isdigit())))
+        if eng.observe_player().npcs_here[0].refusal:
+            break
+
+    assert seen == [3, 2, 1], f"倒计时不准：{seen}"
+
+
+def test_no_warning_once_she_has_already_stopped_talking() -> None:
+    """已经翻脸了还预警「再缠 1 次她就不理你」是自相矛盾的一帧——
+    和迟滞修掉的那个问题同一类。"""
+    eng = _engine()
+    _badger(eng, 40)
+
+    panel = eng.observe_player().npcs_here[0]
+    assert panel.refusal
+    assert panel.mood_warning == ""
+
+
+def test_nobody_warns_when_talking_cannot_anger_her() -> None:
+    """魔理沙和芙兰的模式都没声明 approaching，而且搭话让她们更兴奋不是更烦。
+    给一个走不到的状态预警等于常驻一条永远不会兑现的警告。"""
+    eng = _engine()
+    for npc in ("marisa", "flandre"):
+        eng.state.player.location = eng.state.npcs[NpcId(npc)].location
+        _badger(eng, 40)
+        assert eng.observe_player().npcs_here[0].mood_warning == ""
+
+
+def test_a_warning_without_a_countdown_fails_to_load() -> None:
+    """预警文案漏掉占位符会渲染成一句没有数字的话，而它的全部价值就是那个
+    数字——静默退化成一句废话，正是坑 #5 那类。"""
+    from pydantic import ValidationError
+
+    from gensokyo.world.defs import EmotionMode
+
+    with pytest.raises(ValidationError, match="turns"):
+        EmotionMode(name="x", range=(0.6, 1.0), approaching="她快生气了。")
+
+
+def _set_mood(eng: WorldEngine, npc: str, emotion: float, mode: str) -> None:
+    """直接摆放情绪与模式。
+
+    这里可以绕过动作日志，因为被测的是**显示函数**——`_mood_warning` 只读
+    当前状态、不写任何东西，回放一致性与它无关。涉及回放的测试仍然必须
+    全程用动作构造（坑 #9）。
+    """
+    state = eng.state.npcs[NpcId(npc)]
+    state.emotion = emotion
+    state.mode = mode
+
+
+def test_no_warning_when_she_is_already_past_the_threshold() -> None:
+    """她还在 normal 但情绪已经超过门槛（迟滞让模式滞后一拍）时，倒计时会
+    算成 0——屏幕上出现「再缠 0 次她大概就不会理你了」。"""
+    eng = _engine()
+    _set_mood(eng, "reimu", 0.63, "normal")
+
+    assert eng.observe_player().npcs_here[0].mood_warning == ""
+
+
+def test_no_warning_while_she_is_already_refusing() -> None:
+    """翻脸之后衰减会把她带回 0.55~0.60，而那个区间按倒计时公式算出来是
+    「再缠 2 次」——于是「不打算再理你了」和「再缠 2 次她就不理你了」同框。
+    和迟滞修掉的那一帧是同一类矛盾。"""
+    eng = _engine()
+    _set_mood(eng, "reimu", 0.58, "irritated")
+
+    panel = eng.observe_player().npcs_here[0]
+    assert panel.refusal
+    assert panel.mood_warning == ""
+
+
+def test_a_character_whose_mood_cannot_rise_never_warns() -> None:
+    """净增为零时倒计时公式会除以零。而「情绪涨不上去」是个合法配置——
+    某个角色的 player_talked 增量正好等于衰减率就会这样。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+    card.emotion.event_deltas["player_talked"] = card.emotion.decay_per_tick
+    _set_mood(eng, "reimu", 0.56, "normal")
+
+    assert eng.observe_player().npcs_here[0].mood_warning == ""

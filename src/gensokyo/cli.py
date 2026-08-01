@@ -56,6 +56,8 @@ def render(view: PlayerView) -> str:
         )
         if npc.mode_hint:
             lines.append(f"      {npc.mode_hint}")
+        if npc.mood_warning:
+            lines.append(f"⚠ {npc.mood_warning}")
     lines.append(f"进展：{view.quest_hint}")
     if view.objective:
         lines.append(f"目标：{view.objective}")

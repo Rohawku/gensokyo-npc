@@ -105,6 +105,25 @@ class EmotionMode(StrictModel):
     `irritated` 的人设本身（角色卡写的是「可能直接赶人」），把它变成机制
     比继续加一句提示可靠。
     """
+    approaching: str = ""
+    """快要进入这个模式时给玩家的预警，必须含 `{turns}` 占位符。
+
+    从「懒散」直接跳到「转身走开」是断崖式的，玩家不知道自己踩到了什么。
+    引擎里已经有同一套做法的先例——无缘塚的遗忘机制会提前说「再在这里待
+    2 步，你会忘掉一件事」。可预告的惩罚才是机制，不可预告的是陷阱。
+
+    倒计时由引擎按「她的情绪每回合净涨多少」算出来，所以它不是拍脑袋的
+    文案，改角色卡的 `player_talked` 或 `decay_per_tick` 它会跟着变。
+    """
+
+    @field_validator("approaching")
+    @classmethod
+    def _must_have_countdown(cls, value: str) -> str:
+        """预警文案漏掉占位符会渲染成一句没有数字的话，而它的全部价值就是
+        那个数字。空串表示这个模式不预警，是合法的。"""
+        if value and "{turns}" not in value:
+            raise ValueError("approaching 必须含 {turns} 占位符，否则预警里没有倒计时")
+        return value
 
     def contains(self, value: float, margin: float = 0.0) -> bool:
         """左闭右开，保证模式区间不重叠。最高档的上界特殊处理为闭区间。

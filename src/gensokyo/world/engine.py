@@ -1,3 +1,4 @@
+import math
 from collections import deque
 from collections.abc import Callable
 from typing import Any
@@ -18,6 +19,7 @@ from gensokyo.world.quest import (
 )
 from gensokyo.world.rules import (
     ATTITUDE_DELTA,
+    MODE_HYSTERESIS,
     apply_emotion_decay,
     bump_attitude,
     bump_emotion,
@@ -44,6 +46,14 @@ from gensokyo.world.tools import (
 )
 
 ToolHandler = Callable[[Action, BaseModel], ActionResult]
+
+
+WARN_WITHIN_TURNS = 3
+"""提前几个回合开始预警。
+
+3 是「够你反应过来」和「不至于一进门就在报警」之间的取舍：灵梦从初始
+0.10 涨到门槛要 ~28 个回合，预警只在最后三个回合出现。
+"""
 
 
 class WorldEngine:
@@ -636,6 +646,35 @@ class WorldEngine:
                 return mode.refusal
         return ""
 
+    def _mood_warning(self, npc_id: NpcId) -> str:
+        """再被搭话几次她就要翻脸了。没有可预告的惩罚只有陷阱。
+
+        倒计时必须按**回合内的时序**算，不能按「每回合净增多少」除一除。
+        一个回合里的顺序是「玩家发言推高情绪 → 判定模式 → 回合末衰减」，
+        所以翻脸发生在**发言那一刻**，那一次的衰减还没扣。第一版按净增算
+        出「再缠 3 次」，而她下一回合就翻脸了——多算了一次尚未发生的衰减。
+
+        第 t 次发言时她的情绪是 `emotion + (t-1)·net + delta`，令它越过门槛：
+
+            t = 1 + ceil((门槛 − 当前 − delta) / net)
+        """
+        card = self.defs.characters[npc_id]
+        npc = self.state.npcs[npc_id]
+        delta = emotion_delta_for(card, "player_talked")
+        net = delta - card.emotion.decay_per_tick
+        if net <= 0:
+            # 她的情绪不会因为说话而上升，这条路走不到，预警也就没有意义。
+            return ""
+        for mode in card.emotion.modes:
+            if not mode.approaching or mode.name == npc.mode:
+                continue
+            # 进入门槛比裸阈值高一个迟滞带宽，和 resolve_mode 用同一个数。
+            threshold = mode.range[0] + MODE_HYSTERESIS
+            turns = 1 + math.ceil((threshold - npc.emotion - delta) / net)
+            if 0 < turns <= WARN_WITHIN_TURNS:
+                return mode.approaching.format(turns=turns)
+        return ""
+
     def _player_objective(self) -> str:
         """玩家可见的当前目标。门槛一开就要变，否则玩家会一直投赛钱
         而不知道该开口问了。"""
@@ -695,6 +734,7 @@ class WorldEngine:
                     mode=self.state.npcs[nid].mode,
                     mode_hint=self._mode_hint(nid),
                     will_talk=self._will_talk(nid),
+                    mood_warning=self._mood_warning(nid),
                     refusal=self._refusal(nid),
                 )
                 for nid in self._npcs_here()

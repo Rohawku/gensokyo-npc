@@ -65,6 +65,8 @@ class NpcPanel(BaseModel):
     mode_hint: str = ""
     will_talk: bool = False
     """她现在是否有线索可给。机器可读的门槛信号，供玩家模拟器与指标使用。"""
+    mood_warning: str = ""
+    """她快要不搭话时的预警，含倒计时。可预告的惩罚才是机制。"""
     refusal: str = ""
     """非空表示她这会儿不搭话，内容就是玩家看到的那一行。
 
