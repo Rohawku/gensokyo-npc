@@ -106,11 +106,17 @@ class EmotionMode(StrictModel):
     比继续加一句提示可靠。
     """
 
-    def contains(self, value: float) -> bool:
-        """左闭右开，保证模式区间不重叠。最高档的上界特殊处理为闭区间。"""
+    def contains(self, value: float, margin: float = 0.0) -> bool:
+        """左闭右开，保证模式区间不重叠。最高档的上界特殊处理为闭区间。
+
+        `margin` 把区间两端各外扩一点，用于迟滞：留在当前模式的判定比
+        进入它更宽松，于是值在阈值上下抖动时模式不会跟着抖。
+        """
         low, high = self.range
-        if high >= 1.0:
-            return low <= value <= high
+        low -= margin
+        high += margin
+        if self.range[1] >= 1.0:
+            return low <= value
         return low <= value < high
 
 

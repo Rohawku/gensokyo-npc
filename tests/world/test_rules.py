@@ -90,3 +90,49 @@ def test_can_reveal_with_no_conditions_is_always_true() -> None:
     npc = state.npcs[NpcId("reimu")]
 
     assert can_reveal(npc, RevealConditions()) is True
+
+
+def test_entering_a_mode_needs_more_than_the_bare_threshold() -> None:
+    """施密特触发器：进入的门槛比裸阈值高一个迟滞带宽。"""
+    card = _defs().characters[NpcId("reimu")]
+
+    assert resolve_mode(card, 0.62, "normal") == "normal"
+    assert resolve_mode(card, 0.66, "normal") == "irritated"
+
+
+def test_leaving_a_mode_needs_dropping_below_the_bare_threshold() -> None:
+    card = _defs().characters[NpcId("reimu")]
+
+    assert resolve_mode(card, 0.58, "irritated") == "irritated"
+    assert resolve_mode(card, 0.54, "irritated") == "normal"
+
+
+def test_without_a_current_mode_the_bare_threshold_applies() -> None:
+    """初始化时还没有「当前模式」，只能按裸阈值算。"""
+    card = _defs().characters[NpcId("reimu")]
+
+    assert resolve_mode(card, 0.62) == "irritated"
+
+
+def test_the_mode_does_not_flicker_when_the_value_oscillates() -> None:
+    """复刻实测的抖动：玩家连续搭话时烦躁度每回合 +0.05、回合末衰减 -0.03，
+    恰好跨在灵梦 0.6 的门槛上来回。
+
+    没有迟滞时玩家屏幕上会出现「平常的懒散语气」和「不打算再理你了」同框
+    ——她在回合内越过门槛触发拒绝，回合末又掉回门槛以下，而面板是在衰减
+    之后画的。这条测试锁住的就是那一帧不再出现。
+    """
+    card = _defs().characters[NpcId("reimu")]
+    mode = "normal"
+    seen = [mode]
+    value = 0.56
+    for _ in range(6):
+        value += 0.05
+        mode = resolve_mode(card, value, mode)
+        value -= 0.03
+        mode = resolve_mode(card, value, mode)
+        seen.append(mode)
+
+    switches = sum(1 for a, b in zip(seen, seen[1:], strict=False) if a != b)
+    assert switches == 1, f"模式在阈值上抖动了 {switches} 次：{seen}"
+    assert seen[-1] == "irritated"

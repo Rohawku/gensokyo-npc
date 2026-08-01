@@ -87,10 +87,12 @@ def test_invariants_hold_under_arbitrary_action_sequences(actions: list[Action])
     for count in eng.state.player.inventory.values():
         assert count > 0
     assert eng.state.npcs["flandre"].location == "scarlet_devil_basement"
-    # 情绪状态机的核心不变量：mode 是 emotion 的纯函数，任何时刻都不许脱钩。
-    # 少了这一条，bump_emotion 里漏掉 mode 重算也没有测试会红。
+    # 情绪状态机的核心不变量：mode 必须和 emotion 对得上，任何时刻都不许脱钩。
+    # 传 npc.mode 是因为模式切换带迟滞（施密特触发器）——当前模式落在迟滞带内
+    # 时这一条确实是恒真的，但模式一旦跑到带外就会翻，而「bump_emotion 漏掉
+    # mode 重算」正是那种情况：情绪一路涨而模式停在原地，很快就出带。
     for npc_id, npc in eng.state.npcs.items():
-        assert npc.mode == resolve_mode(eng.defs.characters[npc_id], npc.emotion)
+        assert npc.mode == resolve_mode(eng.defs.characters[npc_id], npc.emotion, npc.mode)
 
 
 @settings(max_examples=50, suppress_health_check=[HealthCheck.too_slow])

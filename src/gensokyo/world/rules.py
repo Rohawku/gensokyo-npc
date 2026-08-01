@@ -26,7 +26,28 @@ def emotion_delta_for(card: CharacterCard, event: str) -> float:
     return EMOTION_DELTA.get(event, 0.0)
 
 
-def resolve_mode(card: CharacterCard, emotion: float) -> str:
+MODE_HYSTERESIS = 0.05
+"""模式切换的迟滞带宽（施密特触发器）。
+
+没有它，阈值上的抖动会让模式每回合翻一次。实测：玩家连续搭话时烦躁度每
+回合 +0.05、回合末衰减 -0.03，恰好跨在灵梦 0.6 的门槛上来回。玩家屏幕上
+于是出现「平常的懒散语气」和「不打算再理你了」同框——她在回合内越过门槛
+触发了拒绝，回合末又掉回门槛以下，而面板是在衰减之后画的。
+
+带宽 0.05 表示：进入 irritated 要到 0.65，退出要掉到 0.55 以下。
+"""
+
+
+def resolve_mode(card: CharacterCard, emotion: float, current: str = "") -> str:
+    """情绪值 → 模式名。`current` 非空时启用迟滞。
+
+    调用方几乎总该传 `current`：不传等于每次都按裸阈值重算，抖动就回来了。
+    只有初始化（还没有「当前模式」）才该省略。
+    """
+    if current:
+        for mode in card.emotion.modes:
+            if mode.name == current and mode.contains(emotion, MODE_HYSTERESIS):
+                return current
     for mode in card.emotion.modes:
         if mode.contains(emotion):
             return mode.name
@@ -39,7 +60,7 @@ def bump_attitude(npc: NpcState, delta: int) -> None:
 
 def bump_emotion(npc: NpcState, card: CharacterCard, delta: float) -> None:
     npc.emotion = max(0.0, min(1.0, npc.emotion + delta))
-    npc.mode = resolve_mode(card, npc.emotion)
+    npc.mode = resolve_mode(card, npc.emotion, npc.mode)
 
 
 def apply_emotion_decay(npc: NpcState, card: CharacterCard) -> None:

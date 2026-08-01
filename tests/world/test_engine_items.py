@@ -98,7 +98,7 @@ def test_emotion_and_mode_stay_consistent_through_the_engine() -> None:
     crossed = False
     for _ in range(4):
         eng.apply(Action(actor="player", tool="give_item", args={"item": COIN}))
-        assert marisa.mode == resolve_mode(card, marisa.emotion)
+        assert marisa.mode == resolve_mode(card, marisa.emotion, marisa.mode)
         if marisa.mode == "excited":
             crossed = True
 
