@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from gensokyo.world.defs import StageDef, WorldDefs
+from gensokyo.world.defs import EmotionMode, StageDef, WorldDefs
 from gensokyo.world.events import Event, EventKind
 from gensokyo.world.ids import EventId, ItemId, LocationId, NpcId
 from gensokyo.world.observation import FactContext, NpcPanel, Observation, PlayerView
@@ -205,15 +205,12 @@ class WorldEngine:
         否则写错一行 YAML 就能让芙兰逃出地下室。
         """
         card = self.defs.characters[npc_id]
-        npc = self.state.npcs[npc_id]
 
         allowed = {name for name, spec in TOOL_REGISTRY.items() if not spec.restricted}
         allowed -= set(card.tools.deny_always)
-        for mode in card.emotion.modes:
-            if mode.name != npc.mode:
-                continue
-            allowed -= set(mode.tools_deny)
-            allowed |= set(mode.tools_allow)
+        mode = self._current_mode(npc_id)
+        allowed -= set(mode.tools_deny)
+        allowed |= set(mode.tools_allow)
         allowed -= set(card.tools.deny_always)
 
         return [TOOL_REGISTRY[name] for name in sorted(allowed)]
@@ -424,12 +421,26 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev], f"拿走了{self._item_name(args.item)}。")
 
+    def _current_mode(self, npc_id: NpcId) -> EmotionMode:
+        """她当前所在的那档情绪模式。
+
+        「按名字在 modes 里找出那个对象」这段循环曾经散在四个地方（工具集
+        过滤、语气提示、观测组装、拒绝搭话），而每加一个模式相关的字段就
+        多抄一遍。`observe` 里那一份甚至和 `_mode_hint` 逐行相同——改一处
+        忘一处只是时间问题。
+
+        名字对不上时退回第一档：`resolve_mode` 保证模式名总是从这张表里来，
+        所以对不上意味着有人绕过它直接赋值，那是 bug 而不是要在玩家面板上
+        抛异常的场合。
+        """
+        name = self.state.npcs[npc_id].mode
+        for mode in self.defs.characters[npc_id].emotion.modes:
+            if mode.name == name:
+                return mode
+        return self.defs.characters[npc_id].emotion.modes[0]
+
     def _mode_hint(self, npc_id: NpcId) -> str:
-        mode = self.state.npcs[npc_id].mode
-        for m in self.defs.characters[npc_id].emotion.modes:
-            if m.name == mode:
-                return m.speech_hint
-        return ""
+        return self._current_mode(npc_id).speech_hint
 
     def resolve_item(self, text: str) -> ItemId | None:
         """把玩家输入的中文物品名或英文 id 解析成 ItemId。
@@ -543,11 +554,6 @@ class WorldEngine:
         npc = self.state.npcs[npc_id]
         loc = self.defs.locations[npc.location]
 
-        hint = ""
-        for mode in card.emotion.modes:
-            if mode.name == npc.mode:
-                hint = mode.speech_hint
-
         facts: list[FactContext] = []
         for fact_id in sorted(npc.holds_facts):
             fact = self.defs.facts[fact_id]
@@ -584,7 +590,7 @@ class WorldEngine:
             emotion_var=npc.emotion_var,
             emotion=npc.emotion,
             mode=npc.mode,
-            mode_speech_hint=hint,
+            mode_speech_hint=self._mode_hint(npc_id),
             own_inventory=self._named(npc.inventory),
             items_here=self._named(self.state.locations[npc.location].items),
             received_from_player=sorted(self._item_name(item) for item in npc.received_items),
@@ -640,11 +646,7 @@ class WorldEngine:
 
     def _refusal(self, npc_id: NpcId) -> str:
         """当前情绪模式若声明了 refusal，她就不搭话，返回给玩家看的那一行。"""
-        npc = self.state.npcs[npc_id]
-        for mode in self.defs.characters[npc_id].emotion.modes:
-            if mode.name == npc.mode:
-                return mode.refusal
-        return ""
+        return self._current_mode(npc_id).refusal
 
     def _mood_warning(self, npc_id: NpcId) -> str:
         """再被搭话几次她就要翻脸了。没有可预告的惩罚只有陷阱。
