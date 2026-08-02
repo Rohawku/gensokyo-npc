@@ -1,7 +1,7 @@
 import math
 from collections import deque
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -46,6 +46,27 @@ from gensokyo.world.tools import (
 )
 
 ToolHandler = Callable[[Action, BaseModel], ActionResult]
+
+
+def _typed[A: BaseModel](model: type[A], fn: Callable[[Action, A], ActionResult]) -> ToolHandler:
+    """把「参数类型明确」的处理函数包成统一签名的 `ToolHandler`。
+
+    分发表的值必须是同一个签名，而每个处理函数只认自己那个参数模型。原先
+    的做法是让所有处理函数都收 `BaseModel`，再在函数体第一行写
+    `assert isinstance(args, SayArgs)` 收窄类型——八个工具就是八行样板，
+    而且那是**运行时**断言，注册表里配错了要跑到才知道。
+
+    这里让 `A` 同时从 `model` 和 `fn` 的第二个参数推导，于是
+    `_typed(SayArgs, self._do_move)` 在 mypy 下直接报错。**检查从运行时
+    搬到了类型检查期**，顺带少了八行。
+    """
+
+    def wrapper(action: Action, args: BaseModel) -> ActionResult:
+        # cast 而不是 isinstance：调用方唯一的入口是 parse_args，它按
+        # TOOL_REGISTRY 里登记的 args_model 构造，所以类型已经由注册表保证。
+        return fn(action, cast(A, args))
+
+    return wrapper
 
 
 WARN_WITHIN_TURNS = 3
@@ -230,21 +251,20 @@ class WorldEngine:
 
     def _handlers(self) -> dict[str, ToolHandler]:
         return {
-            "say": self._do_say,
-            "move": self._do_move,
-            "travel_to": self._do_travel_to,
-            "give_item": self._do_give_item,
-            "take_item": self._do_take_item,
-            "reveal_info": self._do_reveal_info,
-            "ask_player": self._do_ask_player,
-            "use_spellcard": self._do_use_spellcard,
-            "break_item": self._do_break_item,
+            "say": _typed(SayArgs, self._do_say),
+            "move": _typed(MoveArgs, self._do_move),
+            "travel_to": _typed(TravelToArgs, self._do_travel_to),
+            "give_item": _typed(GiveItemArgs, self._do_give_item),
+            "take_item": _typed(TakeItemArgs, self._do_take_item),
+            "reveal_info": _typed(RevealInfoArgs, self._do_reveal_info),
+            "ask_player": _typed(AskPlayerArgs, self._do_ask_player),
+            "use_spellcard": _typed(UseSpellcardArgs, self._do_use_spellcard),
+            "break_item": _typed(BreakItemArgs, self._do_break_item),
         }
 
     # ---------- 各工具实现 ----------
 
-    def _do_say(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, SayArgs)
+    def _do_say(self, action: Action, args: SayArgs) -> ActionResult:
         kind = EventKind.PLAYER_UTTERANCE if action.actor == "player" else EventKind.NPC_UTTERANCE
         if action.actor == "player":
             # 说话本身要动情绪。在此之前情绪只被 give_item 推动，而灵梦收到
@@ -259,8 +279,7 @@ class WorldEngine:
         ev = self._emit(kind, action.actor, {"text": args.text})
         return ActionResult.succeeded([ev])
 
-    def _do_move(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, MoveArgs)
+    def _do_move(self, action: Action, args: MoveArgs) -> ActionResult:
         here = self._actor_location(action.actor)
         if args.to not in self.defs.locations[here].exits:
             return ActionResult.failed(
@@ -295,8 +314,7 @@ class WorldEngine:
                 queue.append((nxt, [*path, nxt]))
         return None
 
-    def _do_travel_to(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, TravelToArgs)
+    def _do_travel_to(self, action: Action, args: TravelToArgs) -> ActionResult:
         if action.actor == "player":
             return ActionResult.failed(
                 ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用，你得自己一步步走。"
@@ -339,8 +357,7 @@ class WorldEngine:
     def _push_items(bag: dict[ItemId, int], item: ItemId, count: int) -> None:
         bag[item] = bag.get(item, 0) + count
 
-    def _do_give_item(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, GiveItemArgs)
+    def _do_give_item(self, action: Action, args: GiveItemArgs) -> ActionResult:
         if action.actor == "player":
             present = self._npcs_here()
             if not present:
@@ -385,8 +402,7 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev], f"给出了{self._item_name(args.item)}。")
 
-    def _do_take_item(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, TakeItemArgs)
+    def _do_take_item(self, action: Action, args: TakeItemArgs) -> ActionResult:
         if action.actor == "player":
             here = self.state.locations[self.state.player.location]
             if not self._pop_items(here.items, args.item, args.count):
@@ -457,8 +473,7 @@ class WorldEngine:
         known = self.defs.items.get(item)
         return known.name if known else str(item)
 
-    def _do_reveal_info(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, RevealInfoArgs)
+    def _do_reveal_info(self, action: Action, args: RevealInfoArgs) -> ActionResult:
         if action.actor == "player":
             return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
 
@@ -491,8 +506,7 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev], fact.content)
 
-    def _do_ask_player(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, AskPlayerArgs)
+    def _do_ask_player(self, action: Action, args: AskPlayerArgs) -> ActionResult:
         if action.actor == "player":
             return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
 
@@ -503,8 +517,7 @@ class WorldEngine:
         )
         return ActionResult.succeeded([ev])
 
-    def _do_use_spellcard(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, UseSpellcardArgs)
+    def _do_use_spellcard(self, action: Action, args: UseSpellcardArgs) -> ActionResult:
         if action.actor == "player":
             return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
 
@@ -529,8 +542,7 @@ class WorldEngine:
 
         return ActionResult.succeeded([ev], f"发动了符卡「{args.name}」。")
 
-    def _do_break_item(self, action: Action, args: BaseModel) -> ActionResult:
-        assert isinstance(args, BreakItemArgs)
+    def _do_break_item(self, action: Action, args: BreakItemArgs) -> ActionResult:
         if action.actor == "player":
             return ActionResult.failed(ErrorCode.TOOL_DENIED, "这个动作只有 NPC 能用。")
 
