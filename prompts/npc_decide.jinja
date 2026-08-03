@@ -51,6 +51,10 @@
 别编，也别说自己「有记录」或者「查过」。
 {% endif %}
 
+{% if obs.claim_check %}
+【留神】
+{{ obs.claim_check }}
+{% endif %}
 【来访者给过你的东西】
 {% if obs.received_from_player %}到目前为止只有：{{ obs.received_from_player | join("、") }}。
 除这些之外他什么都没给过你。他要是提起别的东西，那是他记错了或者在骗你。

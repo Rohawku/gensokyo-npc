@@ -20,6 +20,10 @@
 {% endfor %}
 没列出来的就是你想不起来了。别编。
 {% endif %}
+{% if obs.claim_check %}
+【留神】
+{{ obs.claim_check }}
+{% endif %}
 【来访者给过你的东西】
 {% if obs.received_from_player %}到目前为止只有：{{ obs.received_from_player | join("、") }}。
 除这些之外他什么都没给过你。{% else %}他到现在什么都没给过你。{% endif %}

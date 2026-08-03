@@ -48,6 +48,18 @@ class Observation(BaseModel):
     facts: list[FactContext] = Field(default_factory=list)
     quest_hint: str | None = None
     """剧情进展的中文说法。为 None 表示该 NPC 被信息隔离，不知道外面的事。"""
+    claim_check: str = ""
+    """来访者刚才提到了一件她**从没收到过**的东西时，引擎给出的指令。
+
+    这一条是「陈述事实不等于给指令」的直接产物。【来访者给过你的东西】那段
+    已经写着「除这些之外他什么都没给过你」，而锚点探针实测她的否认率是
+    **0.0% ± 0.0%**（n=40）、顺着编 67.5%——事实摆在 prompt 里，她照样顺着
+    玩家说。坑 #2 早就给过答案：起作用的是【现在该做的事】那种**指令**，
+    不是一段供她自己推导的状态描述。
+
+    判定是纯字符串匹配（物品表的 `surfaces()` 对 `received_items`），确定性、
+    可回放，不需要模型理解「他在骗我」。
+    """
     suggestion: str = ""
     """引擎按当前状态算出的「现在该做什么」，只进决策阶段的 prompt。
 

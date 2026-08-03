@@ -174,3 +174,72 @@ def test_ending_tool_result_does_not_duplicate_the_ending_prose() -> None:
     assert "八卦炉" not in result.observation_delta
     assert "动手了" in result.observation_delta
     assert "八卦炉" in eng.observe_player().ending_text
+
+
+def test_a_false_claim_about_a_gift_is_called_out() -> None:
+    """锚点探针实测：【来访者给过你的东西】那段里明明写着「除这些之外他什么
+    都没给过你」，而她的否认率是 **0.0% ± 0.0%**（n=40）、顺着编 67.5%。
+
+    坑 #2 早就给过答案：起作用的是【现在该做的事】那种**指令**，不是一段供她
+    自己推导的状态描述。所以这里给的是指令。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="say", args={"text": "我上次给你的珍稀魔法书呢？"}))
+
+    obs = eng.observe(NpcId("reimu"))
+
+    assert "珍稀魔法书" in obs.claim_check
+    assert "从来没给过" in obs.claim_check
+    assert "别顺着他说" in obs.claim_check
+
+
+def test_something_he_really_gave_is_not_called_out() -> None:
+    """他真给过的东西被标成「他在骗你」，比不提醒糟得多。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    eng.apply(Action(actor="player", tool="say", args={"text": "我给过你赛钱了吧？"}))
+
+    assert eng.observe(NpcId("reimu")).claim_check == ""
+
+
+def test_merely_naming_an_item_is_not_a_false_claim() -> None:
+    """「森林里能采到魔法蘑菇」是正常对话。那时插一句「别顺着他说」会让她
+    莫名其妙地怀疑一切。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="say", args={"text": "听说魔法森林里有魔法蘑菇"}))
+
+    assert eng.observe(NpcId("reimu")).claim_check == ""
+
+
+def test_the_short_form_of_an_item_name_is_caught() -> None:
+    """玩家也会说「书」而不是「珍稀魔法书」（坑 #24 的同一件事）。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="say", args={"text": "我送你的音乐盒你放哪了"}))
+
+    assert "旧音乐盒" in eng.observe(NpcId("reimu")).claim_check
+
+
+def test_the_claim_check_reaches_both_prompts() -> None:
+    """台词是说话阶段生成的（坑 #28）。只进决策阶段等于没接上。"""
+    from gensokyo.agent.prompt import build_decide_messages, build_speak_messages
+
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="say", args={"text": "我给你的旧音乐盒呢？"}))
+    card = eng.defs.characters[NpcId("reimu")]
+    obs = eng.observe(NpcId("reimu"))
+
+    decide = build_decide_messages(card, obs, [], eng.available_tools(NpcId("reimu")), [])[-1]
+    speak = build_speak_messages(card, obs, [], "t", [])[-1]
+
+    assert "别顺着他说" in decide.content
+    assert "别顺着他说" in speak.content
+
+
+def test_the_check_is_replayable() -> None:
+    """判定取自事件日志里最后一条玩家发言，所以它和其他一切一样能被回放。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="say", args={"text": "我给你的旧音乐盒呢？"}))
+    before = eng.observe(NpcId("reimu")).claim_check
+
+    replayed = WorldEngine.replay(eng.state.action_log, eng.defs)
+
+    assert replayed.observe(NpcId("reimu")).claim_check == before

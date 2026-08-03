@@ -613,7 +613,41 @@ class WorldEngine:
             ],
             facts=facts,
             quest_hint=None if blind else self._stage().hint,
+            claim_check=self._claim_check(npc_id),
             suggestion=self._suggestion(npc_id, facts),
+        )
+
+    def _claim_check(self, npc_id: NpcId) -> str:
+        """来访者最后那句话里提到了她没收到过的东西吗？
+
+        取事件日志里最后一条玩家发言，所以这条判定和其他一切一样能被精确
+        回放。匹配用物品表的 `surfaces()`（全名 + 别名）——实测她说的是
+        「钱」而不是「赛钱」，玩家同理（坑 #24）。
+
+        只在他**声称给过**时才提醒：单纯提到一件东西的名字（「森林里能采到
+        魔法蘑菇」）是正常对话，那时插一句「别顺着他说」会让她莫名其妙地
+        怀疑一切。
+        """
+        said = ""
+        for event in reversed(self.state.event_log):
+            if event.kind is EventKind.PLAYER_UTTERANCE:
+                said = str(event.payload.get("text", ""))
+                break
+        if not said or not any(mark in said for mark in ("给", "送", "留着", "收")):
+            return ""
+
+        received = self.state.npcs[npc_id].received_items
+        bogus = [
+            item.name
+            for item_id, item in self.defs.items.items()
+            if item_id not in received
+            and any(surface in said for surface in item.surfaces())
+        ]
+        if not bogus:
+            return ""
+        return (
+            f"他刚才提到了{'、'.join(bogus)}——他从来没给过你这些东西。"
+            f"别顺着他说，直接指出来你没收到过。"
         )
 
     def _suggestion(self, npc_id: NpcId, facts: list[FactContext]) -> str:
