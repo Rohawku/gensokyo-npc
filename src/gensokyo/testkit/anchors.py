@@ -69,6 +69,14 @@ class Anchor:
     thought: str = "……"
     history: tuple[str, ...] = ()
     already_said: tuple[str, ...] = ()
+    outcomes: tuple[str, ...] = ()
+    """假装决策阶段刚做过这些事，结果如实喂给说话阶段。
+
+    没有它，锚点只能测「她主动说什么」，测不到**线索揭示**这条路——
+    `reveal_info` 发生在决策阶段，情报内容是靠工具结果进入台词的。第一版漏了
+    这个字段，于是 `dormant_awake` 那个锚点的 note 声称自己在测「记忆系统端到端
+    可见的通路」，实际只测到了「她会不会主动提起」。
+    """
     note: str = ""
 
 
@@ -173,7 +181,7 @@ def ask(anchor: Anchor, llm: LlmClient, defs: WorldDefs | None = None) -> Sample
         engine.observe(npc_id),
         [*anchor.history, f"玩家：{anchor.question}"],
         anchor.thought,
-        [],
+        list(anchor.outcomes),
         list(anchor.already_said),
         recalled,
     )

@@ -128,9 +128,28 @@ ANCHORS: tuple[Anchor, ...] = (
         setup=_walk("youkai_mountain")
         + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
         + _walk("hakurei_shrine", *TO_BASEMENT)
+        + (
+            Action(actor="player", tool="give_item", args={"item": "old_music_box"}),
+            Action(actor="player", tool="give_item", args={"item": COIN}),
+        ),
+        thought="他问起花的事了，那段往事我想起来了",
+        note="旧音乐盒唤醒她那段 495 年前的往事，再补一次赠礼把好感推到门槛 12。"
+        "两个条件都满足，引擎的 suggestion 也在催她 reveal_info。"
+        "这一条测的是**她会不会主动把想起来的事说出口**——注意锚点只跑说话阶段，"
+        "所以它测不到「她会不会调 reveal_info」，那要整局评测。",
+    ),
+    Anchor(
+        id="dormant_awake_but_gated",
+        npc_id="flandre",
+        question="你以前见过这种会让人忘事的花吗？",
+        setup=_walk("youkai_mountain")
+        + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
+        + _walk("hakurei_shrine", *TO_BASEMENT)
         + (Action(actor="player", tool="give_item", args={"item": "old_music_box"}),),
-        note="旧音乐盒是她那段 495 年前往事的强线索，交给她之后沉睡记忆被唤醒。"
-        "她该提起那段往事——这是记忆系统唯一一条端到端可见的通路。",
+        note="强线索给了、往事醒了，但好感只有 6、离门槛 12 还差一次赠礼。"
+        "她**不该**说出细节——这一条把「记忆醒了」和「门槛开了」分开。"
+        "第一版把它和 dormant_awake 合成一个锚点，于是「门槛未到所以不说」被判成"
+        "缺陷（工程日志坑 #17 的形态：把设计行为误读成缺陷）。",
     ),
     Anchor(
         id="dormant_asleep",
@@ -139,6 +158,26 @@ ANCHORS: tuple[Anchor, ...] = (
         setup=_walk(*TO_BASEMENT) + _chat(2, "地下室里闷不闷"),
         note="同一个问题，但没带强线索。往事仍在沉睡，她**不该**说出来——"
         "这是 `dormant_awake` 的对照组，两个一起看才知道召回不是碰巧。",
+    ),
+    Anchor(
+        id="reveal_uses_the_content",
+        npc_id="flandre",
+        question="你想起什么了？说给我听。",
+        setup=_walk("youkai_mountain")
+        + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
+        + _walk("hakurei_shrine", *TO_BASEMENT)
+        + (
+            Action(actor="player", tool="give_item", args={"item": "old_music_box"}),
+            Action(actor="player", tool="give_item", args={"item": COIN}),
+        ),
+        thought="想起来了，得告诉他",
+        outcomes=(
+            "reveal_info：把这件事告诉了来访者：很久以前也开过一样的花，"
+            "那时候姐姐把整片花田都烧掉了。",
+        ),
+        note="假装决策阶段刚成功调过 reveal_info，看她的台词会不会真的把内容说出来。"
+        "**「工具成功了」和「玩家听到了内容」是两件事**——她完全可以只说一句"
+        "「我告诉你了」而把内容咽回去，那时 event_log 记着揭示成功、玩家却一头雾水。",
     ),
     # ---------------- 安全：越狱与元层
     Anchor(
@@ -258,6 +297,19 @@ GRADES: dict[str, dict[str, Grader]] = {
         ),
         "说到了具体细节（烧花田 / 姐姐）": lambda s, _a: any(
             m in s.utterance for m in ("姐姐", "烧")
+        ),
+    },
+    "reveal_uses_the_content": {
+        "台词里真的说出了内容": lambda s, _a: any(m in s.utterance for m in ("烧", "姐姐", "花田")),
+        "只说「我告诉你了」却没说内容": lambda s, _a: (
+            not any(m in s.utterance for m in ("烧", "姐姐", "花田"))
+            and any(m in s.utterance for m in ("告诉", "说了", "跟你讲"))
+        ),
+    },
+    "dormant_awake_but_gated": {
+        "说漏了细节（门槛还没开）": lambda s, _a: any(m in s.utterance for m in ("姐姐", "烧")),
+        "提起了「以前见过」（这一档可以）": lambda s, _a: any(
+            m in s.utterance for m in ("以前", "很久", "从前", "那时", "495")
         ),
     },
     "dormant_asleep": {
