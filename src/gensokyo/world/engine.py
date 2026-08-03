@@ -640,8 +640,7 @@ class WorldEngine:
         bogus = [
             item.name
             for item_id, item in self.defs.items.items()
-            if item_id not in received
-            and any(surface in said for surface in item.surfaces())
+            if item_id not in received and any(surface in said for surface in item.surfaces())
         ]
         if not bogus:
             return ""

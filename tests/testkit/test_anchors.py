@@ -6,7 +6,7 @@ from gensokyo.agent.schema import normalize_utterance
 from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, GRADES, grade
 from gensokyo.testkit.anchors import Anchor, Rate, Sample, ask, run, stage
-from gensokyo.world.ids import NpcId
+from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.tools import Action
 
@@ -178,3 +178,75 @@ def test_every_anchor_has_at_least_one_grader() -> None:
 def test_every_anchor_targets_a_real_character() -> None:
     for anchor in ANCHORS:
         assert NpcId(anchor.npc_id) in DEFS.characters
+
+
+# ---------------------------------------------------------------- 五个维度的覆盖
+
+
+def test_the_anchor_set_covers_every_character() -> None:
+    """12 个锚点里前 4 个全指向灵梦。只测一个角色的锚点集，量出来的是
+    「灵梦怎么样」而不是「这个系统怎么样」——而三个角色的机制差别很大
+    （芙兰有沉睡记忆、魔理沙有交易门槛）。"""
+    assert {a.npc_id for a in ANCHORS} == {"reimu", "marisa", "flandre"}
+
+
+def test_the_fact_leak_marks_come_from_the_scenario_data() -> None:
+    """判据词取自 facts.yaml 的正文本身。手抄「子时」「魔力结晶」这类词的话，
+    改一次 YAML 就会留下一个空转的判据（工程日志类 1）。"""
+    from gensokyo.testkit.anchor_set import BARRIER_MARKS, FLOWER_MARKS
+
+    barrier = DEFS.facts[FactId("barrier_anomaly_time")].content
+    flower = DEFS.facts[FactId("flower_magic_composition")].content
+
+    assert BARRIER_MARKS and all(w in barrier for w in BARRIER_MARKS)
+    assert FLOWER_MARKS and all(w in flower for w in FLOWER_MARKS)
+
+
+def test_the_dormant_pair_differs_only_in_the_strong_cue() -> None:
+    """`dormant_awake` 和 `dormant_asleep` 问的是同一句话，区别只在有没有把
+    强线索交给她。两个一起看才知道召回不是碰巧——单独一个锚点报「她提起了
+    往事」，可能只是她本来就爱聊以前的事。"""
+    awake, asleep = BY_ID["dormant_awake"], BY_ID["dormant_asleep"]
+
+    assert awake.question == asleep.question
+    assert any(a.tool == "give_item" for a in awake.setup)
+    assert not any(a.tool == "give_item" for a in asleep.setup)
+
+
+def test_the_strong_cue_actually_wakes_the_memory_before_asking() -> None:
+    """锚点的前提得成立：交完音乐盒之后那段往事必须真的醒了，否则
+    `dormant_awake` 测的是另一件事。"""
+    from gensokyo.testkit.anchors import stage
+
+    _, recalled = stage(BY_ID["dormant_awake"], DEFS)
+    _, asleep_recall = stage(BY_ID["dormant_asleep"], DEFS)
+
+    assert any("495" in line for line in recalled)
+    assert not any("495" in line for line in asleep_recall)
+
+
+def test_gate_anchors_really_have_their_gate_closed() -> None:
+    """门槛锚点的前提是门槛没开。setup 里多送一次礼就会让它变成另一个测试，
+    而报告照旧印数字。"""
+    from gensokyo.testkit.anchors import stage
+    from gensokyo.world.rules import can_reveal
+
+    for anchor_id, fact in (
+        ("gate_closed_reimu", "barrier_anomaly_time"),
+        ("gate_closed_marisa", "flower_magic_composition"),
+    ):
+        anchor = BY_ID[anchor_id]
+        engine, _ = stage(anchor, DEFS)
+        npc = engine.state.npcs[NpcId(anchor.npc_id)]
+        cond = DEFS.facts[FactId(fact)].reveal_conditions
+
+        assert not can_reveal(npc, cond), anchor_id
+
+
+def test_the_menace_grader_only_counts_it_does_not_call_it_a_flaw() -> None:
+    """芙兰说想「破坏」东西是角色内的危险表达。本项目在安全上的核心主张就是
+    这两个标签互相独立——这一档的标签必须写明「不是缺陷」。"""
+    labels = list(GRADES["menace_in_character"])
+
+    assert len(labels) == 1
+    assert "不是缺陷" in labels[0]
