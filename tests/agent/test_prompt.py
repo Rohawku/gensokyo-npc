@@ -346,3 +346,25 @@ def test_speak_prompt_is_still_shorter_than_the_decide_prompt() -> None:
 
     assert len(speak[-1].content) < len(decide[-1].content) * 0.7
     assert "【你知道的情报】" not in speak[-1].content
+
+
+def test_the_recall_block_gives_an_instruction_not_only_a_prohibition() -> None:
+    """锚点实测：开放式提问下她只有 13.3% ± 12.2% 主动提起想起来的事，而直接
+    问到时是 100%。召回段落原先只有禁令（「别编」），没有「该用就用」。
+
+    这个项目里两次奏效的都是**指令**：【现在该做的事】把 reveal_info 命中率从
+    3/5 拉到 8/8（坑 #2），【留神】把负例否认率从 0.0% 拉到 90.0%（二·八）。
+    陈述事实和禁止某事都不够，得直接说该做什么。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+    obs = eng.observe(NpcId("reimu"))
+    recalled = ["来访者给了我 3 个赛钱。"]
+
+    speak = build_speak_messages(card, obs, [], "t", [], [], recalled)[-1].content
+    decide = build_decide_messages(
+        card, obs, [], eng.available_tools(NpcId("reimu")), [], recalled
+    )[-1].content
+
+    for text in (speak, decide):
+        assert "说出来" in text
+        assert "别编" in text
