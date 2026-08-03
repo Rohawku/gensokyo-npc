@@ -88,8 +88,6 @@ def test_every_pitfall_has_a_takeaway_or_belongs_to_a_class() -> None:
     """
     body = _text().split("## 二、踩过的坑", 1)[1].split("\n## 三、", 1)[0]
     chunks = re.split(r"^### 坑 #(\d+)[：:]", body, flags=re.MULTILINE)[1:]
-    missing = [
-        chunks[i] for i in range(0, len(chunks), 2) if "教训" not in chunks[i + 1]
-    ]
+    missing = [chunks[i] for i in range(0, len(chunks), 2) if "教训" not in chunks[i + 1]]
 
     assert missing == [], f"这些坑没写教训：{missing}"

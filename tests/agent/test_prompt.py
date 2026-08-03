@@ -296,3 +296,53 @@ def test_the_received_list_never_leaks_item_ids() -> None:
 
     assert "赛钱" in section
     assert "offering_coin" not in section
+
+
+def test_speak_prompt_carries_the_memory_and_the_gift_record() -> None:
+    """玩家听到的每一个字都来自说话阶段。记忆和「来访者给过你什么」最初只加
+    进了决策阶段，于是台词是在看不到它们的情况下生成的——那两块信息等于从来
+    没到达过玩家（坑 #28）。
+
+    这也解释了坑 #26 为什么测不出效果：那次针对幻觉率的干预放进了一个不产出
+    文字的阶段，**它在构造上就不可能起作用**。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(
+        card,
+        eng.observe(NpcId("reimu")),
+        [],
+        "在想事情",
+        [],
+        [],
+        ["来访者上次空手来的。"],
+    )[-1].content
+
+    assert "来访者上次空手来的。" in user
+    assert "到目前为止只有：赛钱" in user
+    assert "除这些之外他什么都没给过你" in user
+
+
+def test_speak_prompt_says_so_when_nothing_was_given() -> None:
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(card, eng.observe(NpcId("reimu")), [], "t", [])[-1].content
+
+    assert "他到现在什么都没给过你" in user
+
+
+def test_speak_prompt_is_still_shorter_than_the_decide_prompt() -> None:
+    """加了两段之后它不再是「最少上下文」，但仍然必须明显短于决策阶段——
+    首字延迟是拆两阶段买到的东西（坑 #1），不能就这么还回去。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+    obs = eng.observe(NpcId("reimu"))
+    recalled = ["来访者给了我 3 个赛钱。", "来访者问过结界的事。"]
+
+    decide = build_decide_messages(card, obs, [], eng.available_tools(NpcId("reimu")), [], recalled)
+    speak = build_speak_messages(card, obs, [], "t", [], [], recalled)
+
+    assert len(speak[-1].content) < len(decide[-1].content) * 0.7
+    assert "【你知道的情报】" not in speak[-1].content

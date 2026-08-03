@@ -83,12 +83,18 @@ def build_speak_messages(
     thought: str,
     outcomes: list[str],
     recent_own: list[str] | None = None,
+    recalled: list[str] | None = None,
 ) -> list[Msg]:
-    """说话阶段只带最少上下文：场景描述、物品清单、情报门槛都已经在
-    决策阶段用过了，重复一遍只会拖慢 prompt 处理，而首字延迟正是
-    这次拆分要压下去的东西。
+    """说话阶段只带**必要**的上下文，不是最少的上下文。
 
-    `recent_own` 是她本局说过的台词（已去重），作为禁语清单发下去。"""
+    这一段的历史值得记下来。最初它刻意只带场景 + 历史 + 结果，理由是「情报
+    清单和物品清单在决策阶段用过了，重复一遍只会拖慢首字延迟」。而记忆和
+    「来访者给过你什么」后来都只加进了决策阶段——**于是台词是在看不到这些
+    的情况下生成的**。玩家听到的每一个字都来自这一阶段，所以那两块信息
+    等于从来没到达过玩家（工程日志坑 #28）。
+
+    `recent_own` 是她本局说过的台词（已去重），作为禁语清单发下去。
+    `recalled` 是本回合召回的记忆，已渲染成散文。"""
     body = (
         _env()
         .get_template("npc_speak.jinja")
@@ -98,6 +104,7 @@ def build_speak_messages(
             thought=thought,
             outcomes=outcomes,
             recent_own=recent_own or [],
+            recalled=recalled or [],
         )
     )
     return [

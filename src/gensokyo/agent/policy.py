@@ -121,6 +121,7 @@ def _speak(
     thought: str,
     outcomes: list[str],
     spoken: list[str],
+    recalled: list[str],
     on_chunk: Callable[[str], None] | None,
 ) -> str:
     """阶段二：看着实际结果说一句话，逐块流给调用方。
@@ -137,6 +138,7 @@ def _speak(
         thought,
         outcomes,
         spoken[-BAN_WINDOW:],
+        recalled,
     )
 
     pieces: list[str] = []
@@ -182,6 +184,7 @@ def run_turn(
         decided.decision.thought if decided.decision is not None else "",
         decided.outcomes,
         spoken or [],
+        recalled or [],
         on_chunk,
     )
     calls = decided.llm_calls + 1

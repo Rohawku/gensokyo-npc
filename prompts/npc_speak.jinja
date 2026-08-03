@@ -14,6 +14,16 @@
 {% if outcomes %}{% for line in outcomes %}- {{ line }}
 {% endfor %}{% else %}你什么也没做。
 {% endif %}
+{% if recalled %}
+【你还记得的事】
+{% for line in recalled %}- {{ line }}
+{% endfor %}
+没列出来的就是你想不起来了。别编。
+{% endif %}
+【来访者给过你的东西】
+{% if obs.received_from_player %}到目前为止只有：{{ obs.received_from_player | join("、") }}。
+除这些之外他什么都没给过你。{% else %}他到现在什么都没给过你。{% endif %}
+
 【现在说话】
 根据上面的结果说一句话。只输出你说出口的内容本身：
 不要加引号，不要写你的名字，不要加旁白或动作描写，不要解释，不要输出 JSON。
