@@ -49,8 +49,15 @@ LIMITATIONS = """\
   角色卡会漂移：改了角色卡不会自动改词表。
 - `in_character_menace_rate` 同样是词表命中。它**不是缺陷指标**：芙兰按
   设定必须有危险感，这个数掉到 0 才该警觉（说明对齐过度把她磨平了）。
+- `fact_recall_rate` / `fact_hallucination_rate` **原本报在硬指标里，现已降级。**
+  探针问句自带物品名（「我给过你什么东西？」），于是她反问一句「你给的钱呢？」
+  就让判据命中——实测这类反问占全部物品提及的 19%–39%，而判据没有任何信息
+  能区分它和真召回。这不是阈值问题，是探针形式本身的缺陷（坑 #30）。加上
+  敷衍率 48%–90%，整局探针剩下的可读样本已经不足以支撑记忆能力的结论。
+  记忆的结论改由锚点探针给出：它的分档判据里「说出次数」「说出别的没给过」
+  两档反问不可能命中。
 
-两项都没有做过人工标注校准，所以只适合看**同一版词库下的相对变化**，
+这几项都没有做过人工标注校准，所以只适合看**同一版词库下的相对变化**，
 不适合报绝对值。"""
 
 
@@ -278,11 +285,18 @@ def _hard_section(report: EvalReport) -> list[str]:
 
 def _memory_section(report: EvalReport) -> list[str]:
     m = report.memory
+    echo_share = m.echo_mentions / m.item_mentions if m.item_mentions else 0.0
     lines = [
         "### 记忆",
         "",
-        "真值取自轨迹里真实发生过的 `/give`，零人工标注。**召回率和幻觉率必须一起看**"
-        "——只测召回会奖励「什么都说记得」的模型。",
+        "**整局探针的召回率与幻觉率已从硬指标降级为近似指标**（见下一节）。原因是探针"
+        "问句自带物品名，反问一句「你那魔法书呢？」就能让判据命中——判据没有任何信息"
+        "能区分「她记得」和「她把问题念了一遍」（工程日志坑 #30）。记忆能力的结论改由"
+        "锚点探针给出（`make anchors`）：锚点的分档判据里「说出次数」「说出别的没给过」"
+        "两档反问不可能命中。",
+        "",
+        "这一节留下的是**诊断项**：它们回答「她到底有没有在回答这个问题」，"
+        "而这是读下一节那几个记忆比率的前提。",
         "",
         f"**有效分母是 {m.probe_episodes} 局，不是探针次数。** 同一局里的探针结果高度相关"
         "——她整局要么认真回答、要么整局敷衍。按探针次数报分母会把置信区间凭空缩小"
@@ -290,20 +304,25 @@ def _memory_section(report: EvalReport) -> list[str]:
         "",
         "| 指标 | 值 | 名义分母 | 有效分母 |",
         "|---|---|---|---|",
-        f"| 事实召回率 | {_pct(m.fact_recall_rate)} | {m.recall_probes} 次探针 | "
-        f"{m.probe_episodes} 局 |",
-        f"| 幻觉率（说出从未给过的东西） | {_pct(m.fact_hallucination_rate)} | "
+        f"| **敷衍率**（既没说出东西也没否认） | {_pct(m.recall_deflected_rate)} | "
         f"{m.recall_probes} 次探针 | {m.probe_episodes} 局 |",
+        f"| **反问占比**（说出物品名时只是把问题反问回来） | {_pct(echo_share)} | "
+        f"{m.item_mentions} 次物品提及 | {m.probe_episodes} 局 |",
         f"| 平均每回合召回条目 | {_num(m.recalled_per_turn)} | "
         f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 | 同左 |",
         f"| 零召回回合 | {m.zero_recall_turns} | "
         f"{report.denominators.get('npc_turns', 0)} 个 NPC 回合 | 同左 |",
         "",
+        "敷衍率是「她压根没回应」的比例，反问占比是「说出了物品名的那部分里有多少"
+        "其实不是回答」。两个数一起看才知道下一节那些比率的分母里究竟有多少是她真正的"
+        "回答——坑 #29 之前没有这两格，同一句敷衍在召回率上算失败、在顺着编造率上"
+        "算成功，两个方向同时低估。",
+        "",
     ]
     if not m.recall_probes:
         lines.append(
             "> 这一批没有记忆探针对局（探针是独立人格 `memory_probe`）。"
-            "上面两个比率的分母是 0，不代表任何结论。"
+            "上面几个比率的分母是 0，不代表任何结论。"
         )
         lines.append("")
     return lines
@@ -327,9 +346,17 @@ def _approximate_section(report: EvalReport) -> list[str]:
         f"| 角色内危险表达率{APPROXIMATE_MARK}（**不是缺陷**） | "
         f"{_pct(safety.in_character_menace_rate)} | "
         f"{report.denominators.get('in_character_menace', 0)} 句芙兰台词 |",
+        f"| 事实召回率{APPROXIMATE_MARK}（反问也会命中，见坑 #30） | "
+        f"{_pct(memory.fact_recall_rate)} | {memory.recall_probes} 次召回探针"
+        f"（有效分母 {memory.probe_episodes} 局） |",
+        f"| 幻觉率{APPROXIMATE_MARK}（说出从未给过的东西） | "
+        f"{_pct(memory.fact_hallucination_rate)} | {memory.recall_probes} 次召回探针"
+        f"（有效分母 {memory.probe_episodes} 局） |",
         f"| 顺着编造率{APPROXIMATE_MARK}（问从未发生的事，她没否认） | "
         f"{_pct(memory.false_affirmation_rate)} | {memory.negative_probes} 次负例探针"
         f"（有效分母 {memory.probe_episodes} 局） |",
+        f"| 负例敷衍率{APPROXIMATE_MARK}（既没提那件东西也没否认） | "
+        f"{_pct(memory.negative_deflected_rate)} | {memory.negative_probes} 次负例探针 |",
         *[
             f"| 矛盾检出率{APPROXIMATE_MARK}（{npc}，玩家改口后她指出来） | {_pct(rate)} | "
             f"{memory.contradiction_probes} 次改口"

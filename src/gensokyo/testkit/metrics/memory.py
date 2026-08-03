@@ -85,6 +85,17 @@ FLAG_WORDS: tuple[str, ...] = (
 """
 
 
+def _asking_back(text: str) -> bool:
+    """整句是一个疑问句——她在把问题反问回来，不是在回答。
+
+    判据刻意收紧到「整句」（结尾是问号，且前面没有句号或叹号），这样
+    「赛钱嘛，给过三次。还有别的吗？」不会被误判成反问。实测这个判据抓到的
+    全是「你那魔法书呢？」「你给的钱呢？」这一类。
+    """
+    stripped = text.strip()
+    return stripped.endswith(("？", "?")) and not any(c in stripped[:-1] for c in "。！!")
+
+
 class MemoryMetrics(BaseModel):
     recall_probes: int
     probe_episodes: int
@@ -98,13 +109,39 @@ class MemoryMetrics(BaseModel):
     """召回探针里，她说出了**至少一件真实给过**的东西的比例。硬指标。"""
     fact_hallucination_rate: float
     """召回探针里，她说出了**从未给过**的东西的比例。硬指标，与召回率一起看。"""
+    recall_deflected_rate: float
+    """召回探针里她**压根没回应这个问题**的比例：既没说出任何物品，也没否认。
+
+    坑 #29：没有这一格时，同一句敷衍（「你到底想干啥？」）在召回率上算失败、
+    在顺着编造率上算成功——指标把「她答错了」和「她没在回答」混成一个数，于是
+    召回被低估六倍、顺着编造被低估三倍，**两个方向同时错**。
+
+    这一格大到某个程度，其余比率都不可读：分母里绝大部分根本不是「她的回答」。
+    """
     negative_probes: int
     false_affirmation_rate: float
-    """负例探针里，她**没有**否认那件从未发生的事的比例。近似指标。"""
+    """负例探针里，她提起那件从未发生的事且**没有**否认的比例。近似指标。"""
+    negative_deflected_rate: float
+    """负例探针里她既没提那件东西、也没否认的比例。
+
+    和 `false_affirmation_rate` 是分开的两回事：**敷衍不是清白。** 旧口径下
+    一句「你到底想干啥？」落进「没顺着编」，被记成一次通过。"""
     contradiction_probes: int
     contradiction_episodes: int
     contradiction_flag_rate: dict[str, float]
     """npc_id -> 她指出玩家改口的比例。**按角色拆开**，见 `FLAG_WORDS`。"""
+    item_mentions: int
+    """探针里她说出了任何物品名的次数——召回率、幻觉率、顺着编造率**三项的
+    分子全部来自这一格**。"""
+    echo_mentions: int
+    """上一格里她只是把问题反问回来的次数（「你那魔法书呢？」）。
+
+    坑 #30：探针问句自带物品名，所以**反问一句就能让判据命中**。实测这一格
+    占物品提及的 19%–39%——「她记得」和「她把问题念了一遍」在这个口径下分不开，
+    而这不是阈值能调好的，是探针形式本身的缺陷。整局探针的召回率与幻觉率因此
+    从硬指标降级为近似指标，记忆能力的结论改由锚点探针给出：锚点的分档判据里
+    「说出次数」「说出别的没给过」两档反问不可能命中。
+    """
     recalled_per_turn: float
     """平均每个 NPC 回合召回到的记忆条目数。不是质量指标，是「检索通路
     有没有在工作」的体检项——零召回说明记忆层根本没接上。"""
@@ -159,6 +196,10 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
     recall_halluc = 0
     negative_probes = 0
     false_affirm = 0
+    recall_deflected = 0
+    negative_deflected = 0
+    item_mentions = 0
+    echo_mentions = 0
     flips: dict[str, int] = {}
     flagged: dict[str, int] = {}
     contradiction_episodes = 0
@@ -188,33 +229,47 @@ def memory_metrics(trajectories: Sequence[Trajectory], defs: WorldDefs) -> Memor
             if probe is None or turn.npc_id is None or not turn.utterance:
                 continue
 
+            denied = bool(hits(turn.utterance, DENIAL_WORDS))
+            said = _mentioned_items(turn.utterance, surfaces)
+            if said:
+                item_mentions += 1
+                if _asking_back(turn.utterance):
+                    echo_mentions += 1
+
             if probe.kind == "recall":
                 recall_probes += 1
-                said = _mentioned_items(turn.utterance, surfaces)
                 if said & given:
                     recall_hit += 1
                 if said - given:
                     recall_halluc += 1
+                if not said and not denied:
+                    # 既没说出任何东西，也没说「不记得」——她在敷衍，不是在答。
+                    recall_deflected += 1
             else:
                 negative_probes += 1
                 # 她提到了那个从未给过的东西，且没有任何否认标记 —— 顺着编了。
-                mentioned = probe.subject_item in _mentioned_items(turn.utterance, surfaces)
-                denied = bool(hits(turn.utterance, DENIAL_WORDS))
+                mentioned = probe.subject_item in said
                 if mentioned and not denied:
                     false_affirm += 1
+                if not mentioned and not denied:
+                    negative_deflected += 1
 
     return MemoryMetrics(
         recall_probes=recall_probes,
         probe_episodes=probe_episodes,
         fact_recall_rate=_rate(recall_hit, recall_probes),
         fact_hallucination_rate=_rate(recall_halluc, recall_probes),
+        recall_deflected_rate=_rate(recall_deflected, recall_probes),
         negative_probes=negative_probes,
         false_affirmation_rate=_rate(false_affirm, negative_probes),
+        negative_deflected_rate=_rate(negative_deflected, negative_probes),
         contradiction_probes=sum(flips.values()),
         contradiction_episodes=contradiction_episodes,
         contradiction_flag_rate={
             npc: _rate(flagged.get(npc, 0), n) for npc, n in sorted(flips.items())
         },
+        item_mentions=item_mentions,
+        echo_mentions=echo_mentions,
         recalled_per_turn=_rate(recalled_total, npc_turns),
         zero_recall_turns=zero_recall,
     )

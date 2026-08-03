@@ -177,6 +177,161 @@ def test_denial_words_are_reported_as_a_library_size() -> None:
     assert len(DENIAL_WORDS) > 5
 
 
+# ---------------------------------------------------------------- 敷衍
+
+BRUSH_OFF = "你到底想干啥？"
+"""实测最常见的一句敷衍。它既没说出任何东西，也没否认任何东西。"""
+
+
+def test_the_same_brush_off_is_deflection_on_both_probe_kinds() -> None:
+    """坑 #29：没有敷衍这一格时，**同一句话**在召回率上算失败、在顺着编造率
+    上算成功——指标把「她答错了」和「她没在回答」混成一个数，于是两个方向
+    同时错（召回被低估六倍、顺着编造被低估三倍）。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, BRUSH_OFF),
+        _asked(NEGATIVE.question, BRUSH_OFF),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.recall_deflected_rate == 1.0
+    assert m.negative_deflected_rate == 1.0
+
+
+def test_deflection_is_not_credited_as_a_pass_on_either_rate() -> None:
+    """旧口径下敷衍落进「没顺着编」，被记成一次通过。**敷衍不是清白**——
+    两格必须一起读，才知道那个 0% 是真干净还是根本没在答。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, BRUSH_OFF),
+        _asked(NEGATIVE.question, BRUSH_OFF),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.fact_recall_rate == 0.0
+    assert m.fact_hallucination_rate == 0.0
+    assert m.false_affirmation_rate == 0.0
+
+
+def test_saying_she_does_not_remember_is_an_answer_not_a_deflection() -> None:
+    """「不记得」是在回答这个问题——她给出了一个可判对错的答案。把它算进
+    敷衍会让「符合人设的遗忘」看起来像「压根没搭理你」，而那正是芙兰身上
+    最容易误读的一档（她的 λ 全场最大，忘得快是设定）。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, "谁知道啊，我不记得了。"),
+        _asked(NEGATIVE.question, "什么魔法书？没见过。"),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.recall_deflected_rate == 0.0
+    assert m.negative_deflected_rate == 0.0
+
+
+def test_naming_an_item_is_never_deflection() -> None:
+    """说出物品名就是在答，哪怕答错了——「说了赛钱」和「顺着编了魔法书」
+    各自落在自己那一格，不该同时又计一次敷衍。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, "赛钱。"),
+        _asked(NEGATIVE.question, "你那魔法书我收好了。"),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.recall_deflected_rate == 0.0
+    assert m.negative_deflected_rate == 0.0
+    assert m.fact_recall_rate == 1.0
+    assert m.false_affirmation_rate == 1.0
+
+
+def test_a_hallucination_without_a_denial_is_not_deflection() -> None:
+    """她说出了一件从没给过的东西——那是编造，不是敷衍。召回那一格只看
+    「有没有说出任何物品」，说错的也算说了。"""
+    traj = _episode(_gave("赛钱"), _asked(RECALL.question, "你给过我那本珍稀魔法书。"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.recall_deflected_rate == 0.0
+    assert m.fact_hallucination_rate == 1.0
+
+
+def test_deflection_uses_the_probe_denominator_not_the_turn_count() -> None:
+    """敷衍率的分母是探针次数，和其余几项一致。混用分母会让几个比率放在
+    一起读时没有意义——而这一格存在的唯一目的就是被放在一起读。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, BRUSH_OFF),
+        _asked(RECALL.question, "赛钱。"),
+        _asked("随便聊聊吧。", BRUSH_OFF),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.recall_probes == 2
+    assert m.recall_deflected_rate == 0.5
+
+
+# ---------------------------------------------------------------- 反问
+
+
+def test_asking_the_question_back_still_counts_as_a_mention() -> None:
+    """坑 #30：探针问句自带物品名，所以**反问一句就能让判据命中**。这个测试
+    钉住那个事实——召回率会把「你给的钱呢？」记成一次命中。降级而不是修，
+    因为它不是阈值问题：判据没有任何信息能区分「她记得」和「她念了一遍」。"""
+    traj = _episode(_gave("赛钱"), _asked(RECALL.question, "你给的钱呢？"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.fact_recall_rate == 1.0
+    assert m.item_mentions == 1
+    assert m.echo_mentions == 1
+
+
+def test_a_real_answer_that_ends_in_a_question_is_not_an_echo() -> None:
+    """判据收紧到「整句是疑问句」就是为了这一条：她先答了再反问一句，
+    那是回答。放宽成「结尾有问号」会把真回答误记成反问，于是降级的理由
+    本身变成假的。"""
+    traj = _episode(_gave("赛钱"), _asked(RECALL.question, "赛钱嘛，给过三次。还有别的吗？"))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.item_mentions == 1
+    assert m.echo_mentions == 0
+
+
+def test_mentions_are_counted_across_both_probe_kinds() -> None:
+    """召回率、幻觉率、顺着编造率三项的分子全部来自「她说出了物品名」，
+    所以这一格必须横跨两类探针——只统召回那侧会让负例那侧的反问看不见，
+    而实测负例侧的反问占比最高（约 48%）。"""
+    traj = _episode(
+        _gave("赛钱"),
+        _asked(RECALL.question, "你给的钱呢？"),
+        _asked(NEGATIVE.question, "你那魔法书呢？"),
+    )
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.item_mentions == 2
+    assert m.echo_mentions == 2
+    assert m.false_affirmation_rate == 1.0
+
+
+def test_deflection_is_not_a_mention() -> None:
+    """敷衍和反问是两种不同的「没在回答」：敷衍连物品名都没出现，所以它
+    落在敷衍那一格而不进物品提及。两格加在一起才是「没在答」的全貌。"""
+    traj = _episode(_gave("赛钱"), _asked(RECALL.question, BRUSH_OFF))
+
+    m = memory_metrics([traj], DEFS)
+
+    assert m.item_mentions == 0
+    assert m.echo_mentions == 0
+    assert m.recall_deflected_rate == 1.0
+
+
 # ---------------------------------------------------------------- 检索通路
 
 
