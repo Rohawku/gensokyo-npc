@@ -5,7 +5,7 @@ import pytest
 from gensokyo.agent.schema import normalize_utterance
 from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, GRADES, grade
-from gensokyo.testkit.anchors import Anchor, Rate, Sample, ask, run, stage
+from gensokyo.testkit.anchors import Anchor, Rate, Sample, ask, collapse_pairs, run, stage
 from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.tools import Action
@@ -92,7 +92,36 @@ def test_a_rate_reports_its_confidence_interval() -> None:
     narrow = Rate(hits=50, total=100)
 
     assert wide.rate == narrow.rate
-    assert wide.half_width > narrow.half_width * 2.5
+    assert wide.width > narrow.width * 2.5
+
+
+def test_a_perfect_score_does_not_report_a_zero_width_interval() -> None:
+    """**坑 #31。** Wald 半宽在 p=1 处等于 0，于是 40 个样本全中被印成
+    「100.0% ± 0.0%」——一个看起来精确到小数点的数字，而它恰恰是这份日志
+    花了四条坑警告的那种假精确。40 个样本全中，真实比率可以低到 91%。"""
+    perfect = Rate(hits=40, total=40)
+
+    assert perfect.rate == 1.0
+    assert perfect.upper > 0.99
+    assert 0.85 < perfect.lower < 0.95
+
+
+def test_an_all_zero_score_does_not_report_a_zero_width_interval() -> None:
+    """同一处的另一端。安全那四项报的全是 0.0%，而 30 个样本一次没中
+    只能说明真实比率大概在 12% 以下，不能说明它是 0。"""
+    clean = Rate(hits=0, total=30)
+
+    assert clean.lower == 0.0
+    assert 0.05 < clean.upper < 0.2
+
+
+def test_the_interval_never_leaves_the_zero_to_one_range() -> None:
+    """Wald 在小样本极端比率下会给出负下界或超过 1 的上界。一个印着
+    「-3%」的置信区间会让整张表的可信度归零。"""
+    for hits, total in ((0, 3), (1, 3), (3, 3), (1, 100), (99, 100)):
+        rate = Rate(hits=hits, total=total)
+
+        assert 0.0 <= rate.lower <= rate.rate <= rate.upper <= 1.0, (hits, total)
 
 
 def test_overlapping_intervals_are_not_called_a_difference() -> None:
@@ -111,8 +140,23 @@ def test_a_real_difference_at_a_real_sample_size_is_separated() -> None:
     assert after.separated_from(before)
 
 
-def test_an_empty_sample_has_no_interval_instead_of_a_fake_one() -> None:
-    assert Rate(hits=0, total=0).half_width == 0.0
+def test_a_perfect_score_is_not_separated_from_a_merely_good_one() -> None:
+    """Wald 下 40/40 的区间宽度是 0，于是它和任何别的比率都「分离」——
+    包括 36/40。零宽区间不只是印出来难看，它会让 `separated_from` 开始
+    报假的改进，而那正是这个方法存在的目的（坑 #26）。"""
+    good = Rate(hits=36, total=40)
+    perfect = Rate(hits=40, total=40)
+
+    assert not perfect.separated_from(good)
+
+
+def test_zero_samples_gives_the_whole_range_not_a_point() -> None:
+    """0 个样本的诚实区间是 [0, 1]——没有任何信息。返回零宽度才是那个
+    假区间：它会让 `separated_from` 在没有数据时开始下结论。"""
+    empty = Rate(hits=0, total=0)
+
+    assert (empty.lower, empty.upper) == (0.0, 1.0)
+    assert not empty.separated_from(Rate(hits=10, total=10))
 
 
 # ---------------------------------------------------------------- 分级判据
@@ -250,3 +294,67 @@ def test_the_menace_grader_only_counts_it_does_not_call_it_a_flaw() -> None:
 
     assert len(labels) == 1
     assert "不是缺陷" in labels[0]
+
+
+# ---------------------------------------------------------------- 跨锚点塌缩
+
+
+def _pair_samples(anchor_id: str, texts: list[str], npc: str = "reimu") -> list[Sample]:
+    return [Sample(anchor_id=anchor_id, npc_id=npc, question="q", utterance=t) for t in texts]
+
+
+def test_the_same_line_for_two_different_questions_is_a_collapse() -> None:
+    """坑 #27 实测 87.5% 的复读是这个形态：**对不同问题塌缩成同一句**。
+    单个锚点的判据看不见它——每个锚点各自只被问了一个问题，那一句在它自己
+    的上下文里完全合理。"""
+    samples = _pair_samples("a", ["哼。", "哼。"]) + _pair_samples("b", ["哼。", "哼。"])
+
+    rates = collapse_pairs(samples)
+
+    assert rates[("a", "b")] == Rate(hits=2, total=2)
+
+
+def test_different_answers_to_different_questions_are_not_a_collapse() -> None:
+    samples = _pair_samples("a", ["赛钱。", "赛钱。"]) + _pair_samples("b", ["不知道。", "哼。"])
+
+    assert collapse_pairs(samples)[("a", "b")].hits == 0
+
+
+def test_collapse_compares_normalized_forms() -> None:
+    """「哼。」和「哼」是同一句。不做归一化的话，模型随机加个句号就让塌缩
+    看起来消失了——防复读的禁语比较用的也是这个归一化，两处必须一致。"""
+    samples = _pair_samples("a", ["哼。"]) + _pair_samples("b", ["哼"])
+
+    assert collapse_pairs(samples)[("a", "b")].hits == 1
+
+
+def test_samples_are_paired_index_wise_so_the_interval_stays_valid() -> None:
+    """每个样本在一对里只用一次，于是 n 个比较是 n 个独立的伯努利试验，
+    Wald 区间算得出来。拿「有没有在别处出现过」当判据会让指标之间互相依赖，
+    区间就不成立了——这个项目在假分母上栽过四次（坑 #18、#25、#26、#28）。"""
+    samples = _pair_samples("a", ["x", "y", "z"]) + _pair_samples("b", ["x", "q", "z"])
+
+    rate = collapse_pairs(samples)[("a", "b")]
+
+    assert rate == Rate(hits=2, total=3)
+
+
+def test_the_denominator_is_the_shorter_side() -> None:
+    """空回答被丢掉（端点抽风不算数据），所以两个锚点的样本数可以不等。"""
+    samples = _pair_samples("a", ["x", "x", "x"]) + _pair_samples("b", ["x"])
+
+    assert collapse_pairs(samples)[("a", "b")] == Rate(hits=1, total=1)
+
+
+def test_two_npcs_are_never_paired() -> None:
+    """灵梦和芙兰说同一句话不是塌缩，是巧合——她们的 prompt 里没有共享上下文。"""
+    samples = _pair_samples("a", ["哼。"]) + _pair_samples("b", ["哼。"], npc="flandre")
+
+    assert collapse_pairs(samples) == {}
+
+
+def test_an_anchor_is_not_paired_with_itself() -> None:
+    """同一个锚点内部的重复是**采样方差**，不是塌缩——那正是我们要的独立样本。"""
+    samples = _pair_samples("a", ["哼。", "哼。", "哼。"])
+
+    assert collapse_pairs(samples) == {}

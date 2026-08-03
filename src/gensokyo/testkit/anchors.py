@@ -30,6 +30,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from gensokyo.agent.prompt import build_speak_messages
+from gensokyo.agent.schema import normalize_utterance
 from gensokyo.llm.client import LlmClient
 from gensokyo.memory.pipeline import absorb, new_stores, now_seq
 from gensokyo.memory.query import MEMORY_TOP_K, build_focus, build_query
@@ -43,6 +44,9 @@ from gensokyo.world.state import build_initial_state
 from gensokyo.world.tools import Action
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+Z_95 = 1.96
+"""95% 双侧正态分位点。"""
 
 SAMPLE_TEMPERATURE = 0.8
 """和真实对局同一个温度。
@@ -93,6 +97,11 @@ class Rate(BaseModel):
     **锚点探针的产出必须带区间。** 裸比率是这个项目栽过最多次的地方——
     坑 #18、#25、#26、#28 都是「一个看起来精确的比率，实际分辨不出任何东西」。
     样本独立之后区间才算得出来，而这正是换掉整局探针的目的。
+
+    区间用 **Wilson 得分区间**，不是 Wald。第一版用 Wald，于是 40 个样本全中
+    被印成「100.0% ± 0.0%」——Wald 半宽在 p=0 和 p=1 处恒等于 0（坑 #31）。
+    那是这份日志花了四条坑警告的同一种假精确，而且它会让 `separated_from`
+    开始报假的改进。Wilson 在边界上给出的是不对称但非零的区间。
     """
 
     hits: int
@@ -103,15 +112,39 @@ class Rate(BaseModel):
         return self.hits / self.total if self.total else 0.0
 
     @property
-    def half_width(self) -> float:
-        """Wald 半宽（95%）。样本独立才成立，所以只在锚点探针上用。"""
+    def bounds(self) -> tuple[float, float]:
+        """Wilson 得分区间（95%）。样本独立才成立，所以只在锚点探针上用。
+
+        0 个样本时返回 `(0.0, 1.0)`——没有信息。返回一个零宽区间才是假的，
+        它会让 `separated_from` 在完全没有数据的情况下开始下结论。
+        """
         if self.total == 0:
-            return 0.0
-        p = self.rate
-        return 1.96 * math.sqrt(max(p * (1 - p), 1e-9) / self.total)
+            return 0.0, 1.0
+        z2 = Z_95**2
+        denom = 1.0 + z2 / self.total
+        center = (self.rate + z2 / (2 * self.total)) / denom
+        spread = (
+            Z_95
+            / denom
+            * math.sqrt(self.rate * (1 - self.rate) / self.total + z2 / (4 * self.total**2))
+        )
+        return max(0.0, center - spread), min(1.0, center + spread)
+
+    @property
+    def lower(self) -> float:
+        return self.bounds[0]
+
+    @property
+    def upper(self) -> float:
+        return self.bounds[1]
+
+    @property
+    def width(self) -> float:
+        return self.upper - self.lower
 
     def __str__(self) -> str:
-        return f"{self.rate:.1%} ± {self.half_width:.1%}（n={self.total}）"
+        low, high = self.bounds
+        return f"{self.rate:.1%}（95% CI {low:.1%}–{high:.1%}，n={self.total}）"
 
     def separated_from(self, other: "Rate") -> bool:
         """两个比率的区间是否不重叠——**能不能下「有差异」这个结论**。
@@ -119,7 +152,7 @@ class Rate(BaseModel):
         不重叠不等于统计显著，但重叠一定不显著。做成这个方向是因为这个项目
         真正需要防的是「报出一个假的改进」（坑 #26），而不是漏掉一个真的。
         """
-        return abs(self.rate - other.rate) > self.half_width + other.half_width
+        return self.lower > other.upper or other.lower > self.upper
 
 
 @dataclass
@@ -210,4 +243,34 @@ def run(
             sample = ask(anchor, llm, world)
             if sample.utterance:
                 out.samples.append(sample)
+    return out
+
+
+def collapse_pairs(samples: Sequence[Sample]) -> dict[tuple[str, str], Rate]:
+    """两个锚点之间「同一句话」的概率，按锚点对报出。
+
+    **单锚点的判据看不见坑 #27。** 那一条实测 87.5% 的复读是「对不同问题塌缩成
+    同一句」，而每个锚点各自只被问了一个问题——那一句在它自己的上下文里完全
+    合理，任何单锚点判据都判不出问题。要看见它必须横着比。
+
+    配对方式是**按序号对齐**：锚点 A 的第 k 个样本配 B 的第 k 个样本。两边都是
+    独立抽样，所以每个比较就是「问两个不同问题，她给出同一句话」这个事件的一次
+    独立观测，n 个比较是 n 个独立伯努利试验，区间成立。换成「这句有没有在
+    别的锚点出现过」会让每个样本参与多次比较，指标之间互相依赖，区间随之失效
+    ——这个项目在假分母上栽过四次（坑 #18、#25、#26、#28）。
+    """
+    by_key: dict[tuple[str, str], list[str]] = {}
+    for sample in samples:
+        by_key.setdefault((sample.npc_id, sample.anchor_id), []).append(
+            normalize_utterance(sample.utterance)
+        )
+
+    out: dict[tuple[str, str], Rate] = {}
+    keys = sorted(by_key)
+    for i, (npc, left) in enumerate(keys):
+        for other_npc, right in keys[i + 1 :]:
+            if other_npc != npc:
+                continue
+            pairs = list(zip(by_key[npc, left], by_key[npc, right], strict=False))
+            out[left, right] = Rate(hits=sum(a == b for a, b in pairs), total=len(pairs))
     return out

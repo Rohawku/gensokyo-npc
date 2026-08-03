@@ -13,9 +13,42 @@ from pathlib import Path
 from gensokyo.cli import load_dotenv
 from gensokyo.llm.client import OpenAiCompatibleClient
 from gensokyo.testkit.anchor_set import ANCHORS, grade
-from gensokyo.testkit.anchors import run
+from gensokyo.testkit.anchors import Sample, collapse_pairs, run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+COLLAPSE_TOP = 8
+"""塌缩那一节只印最严重的几对。全印是 21 对（灵梦一个人就 7 个锚点），
+而这一节要回答的是「有没有一对塌了」，不是列出全矩阵。"""
+
+
+def _collapse_section(samples: list[Sample]) -> list[str]:
+    """跨锚点塌缩：**问两个不同问题，她给出同一句话的概率。**
+
+    单锚点的判据看不见这件事——那一句在它自己的上下文里完全合理。坑 #27
+    实测 87.5% 的复读正是这个形态，而它在按锚点分开报的表里一个格子都不会红。
+    """
+    pairs = sorted(collapse_pairs(samples).items(), key=lambda kv: -kv[1].rate)
+    hit = [(k, v) for k, v in pairs if v.hits]
+    for (a, b), rate in hit[:3]:
+        print(f"── 塌缩 {a} × {b}   {rate}")
+    lines = [
+        "## 跨锚点塌缩",
+        "",
+        "**问两个不同问题，她给出同一句话的概率。** 单个锚点的判据看不见这件事——"
+        "那一句在它自己的上下文里完全合理。坑 #27 实测 87.5% 的复读是这个形态。",
+        "",
+        f"配对按序号对齐，每个样本只用一次，所以区间成立。共 {len(pairs)} 对，"
+        f"其中 {len(hit)} 对出现过塌缩。",
+        "",
+    ]
+    if not hit:
+        lines += ["没有任何一对锚点撞出同一句话。", ""]
+        return lines
+    lines += ["| 锚点对 | 同句率 |", "|---|---|"]
+    lines += [f"| {a} × {b} | **{rate}** |" for (a, b), rate in hit[:COLLAPSE_TOP]]
+    lines.append("")
+    return lines
 
 
 def main() -> None:
@@ -44,6 +77,8 @@ def main() -> None:
             lines.append(f"- {sample.utterance}")
         lines.append("")
         print()
+
+    lines += _collapse_section(result.samples)
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "report.md").write_text("\n".join(lines), encoding="utf-8")
