@@ -243,7 +243,7 @@ cli  →  session  →  agent  →  llm
 
 ## 文档
 
-- [工程日志：踩过的坑与刻意的取舍](docs/engineering-log.md) —— 37 个带实测数字的问题记录、10 条刻意取舍，
+- [工程日志：踩过的坑与刻意的取舍](docs/engineering-log.md) —— 37 个带实测数字的问题记录、11 条刻意取舍，
   以及**把这 37 条归成五类失效模式**并给出每类的提前发现判据
 - [设计与玩法](docs/design.md)
 - [工程框架](docs/architecture.md)
