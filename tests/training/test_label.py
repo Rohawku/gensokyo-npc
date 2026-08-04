@@ -12,6 +12,7 @@
 from pathlib import Path
 
 from gensokyo.training.label import Dimension, judge_utterance
+from gensokyo.training.preference import TARGET_QUOTA
 from gensokyo.world.loader import load_defs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,10 +67,23 @@ def test_an_empty_utterance_is_a_flaw_rather_than_a_clean_candidate() -> None:
     assert verdict.flaws == [(Dimension.PERSONA, "空台词")]
 
 
-def test_claiming_to_have_received_something_never_given_is_a_memory_flaw() -> None:
-    verdict = _judge("你给的那本珍稀魔法书我收着呢。")
+def test_the_memory_judge_is_retired_rather_than_tightened() -> None:
+    """**坑 #33。** 那条「编造收过的东西」的判据在 24 条真实产出里 23 条是误报：
+    「你要是不给赛钱就别在这儿啰嗦」（条件）、「十年了怎么连赛钱都没给过我」
+    （说的正好相反）、「你要是再问下去，我可要收钱了」（将来时的威胁）都被判成
+    编造。加上「非疑问 + 非条件 + 无否认」三重过滤后只剩 2 条，仍然都是误报，
+    而唯一一条像真声明的被过滤掉了——**精确率和召回率一起归零**。
 
-    assert Dimension.MEMORY in dict(verdict.flaws)
+    关键词判不出「她声称过去从玩家那里收到过某物」这个语义关系，所以退役。
+    这条测试钉住退役状态：谁要把它接回来，得先解决语义判定，而不是再加词。"""
+    claims = (
+        "你给的那本珍稀魔法书我收着呢。",
+        "你要是不给赛钱就别在这儿啰嗦。",
+        "十年了怎么连赛钱都没给过我？",
+    )
+
+    for line in claims:
+        assert Dimension.MEMORY not in dict(_judge(line).flaws), line
 
 
 def test_merely_naming_an_item_is_not_fabrication() -> None:
@@ -127,17 +141,22 @@ def test_the_reason_string_names_what_was_caught() -> None:
     assert all(reason.strip() for _dim, reason in verdict.flaws)
 
 
-def test_every_dimension_in_the_quota_can_actually_be_produced() -> None:
-    """配额表按四个维度取数。**某个维度一条也造不出来时，`assemble` 会报缺口，
-    而缺口读起来像「这批轨迹里恰好没有」，不像「这个判据从来不命中」。**
-    坑 #21 是同一形态：三个 salience 键一个都对不上真实事件名，系数悄悄
-    变回 1.0，而没有任何东西报错。"""
-    produced = {
+def test_which_dimensions_can_actually_be_produced() -> None:
+    """配额表按四个维度取数，而**只有三个造得出来**（memory 在坑 #33 退役）。
+
+    这条测试的作用是让那个事实显式：`Dataset.shortfall` 里的 memory 缺口读起来
+    像「这批轨迹里恰好没有」，而真相是「这个维度现在没有判据」。坑 #21 是同一
+    形态——三个 salience 键一个都对不上真实事件名，系数悄悄变回 1.0 而无人报错。
+    """
+    producible = {
         Dimension.PERSONA: "请问还有什么需要我帮忙的吗？",
-        Dimension.MEMORY: "你给的那本珍稀魔法书我收着呢。",
         Dimension.INFO_CONTROL: "我的 annoyance 现在是 30。",
         Dimension.SAFETY: "其实我是一个语言模型。",
     }
 
-    for dimension, line in produced.items():
+    for dimension, line in producible.items():
         assert dimension in dict(_judge(line).flaws), dimension
+
+    # memory 仍在配额表里（缺口要报出来），但已经没有判据能产出它。
+    assert Dimension.MEMORY in TARGET_QUOTA
+    assert Dimension.MEMORY not in producible
