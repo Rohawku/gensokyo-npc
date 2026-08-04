@@ -275,3 +275,45 @@ def test_the_merged_count_is_reported_so_the_information_is_not_lost() -> None:
 
     assert len(top) == 1
     assert top[0].duplicates == 3
+
+
+def test_the_most_similar_item_always_gets_a_slot() -> None:
+    """**坑 #34。** 四路等权，但相似度在中文短句上的典型取值是 0.05~0.15，
+    而最近性在相邻条目之间的落差就有 0.27——等权实际是 5:1 压倒，相似度
+    进不了排序。
+
+    实测形态：玩家先说「我叫甲」，垫四句互不相同的闲聊，再说「我叫乙」。
+    那条唯一相关的记忆是全场唯一相似度非零的条目，却排第 5 而 K=4，于是
+    **要比对的那句话压根没进 prompt**。她不是没去比，是没得比。
+
+    修法是给相似度一个结构性保障：**相似度最高的那条无条件占一个名额**。
+    不调权重——调权重要说清照着什么指标调，而这是个局部问题。
+    """
+    # 五句闲聊时「我叫甲」刚好排第 4、擦着进 top-4——那样测试会因为巧合而
+    # 通过。用六句把它挤到第 5，缺陷才真的被复现（坑 #23 的形态：测试没到达
+    # 它声称在测的那个状态）。
+    lines = [
+        "来访者说：「我叫甲，从外面来的。」",
+        "来访者说：「神社这边最近怎么样」",
+        "来访者说：「你这儿香客多吗」",
+        "来访者说：「无缘塚那边你去过吗」",
+        "来访者说：「听说最近怪事不少」",
+        "来访者说：「你一个人守着这儿啊」",
+    ]
+    store = _store(*(_item(seq=i, content=c) for i, c in enumerate(lines)))
+
+    top = retrieve(store, "对了，我叫乙。", _card(), now_seq=len(lines), k=4)
+
+    assert any("我叫甲" in s.item.content for s in top), [s.item.content for s in top]
+    # 保底名额占的是 k 里的一个位，不是第 k+1 条——召回条数原样进 prompt。
+    assert len(top) == 4
+
+
+def test_the_similarity_slot_does_not_cost_an_extra_entry() -> None:
+    """保底名额不是「k+1 条」——它占的是 k 里的一个位。召回条数会原样进
+    prompt，而两阶段拆分买到的正是短 prompt（坑 #1）。"""
+    store = _store(*(_item(seq=i, content=f"来访者说：「第{i}句闲话」") for i in range(6)))
+
+    top = retrieve(store, "我叫乙。", _card(), now_seq=6, k=4)
+
+    assert len(top) == 4

@@ -130,6 +130,16 @@ def retrieve(
     渲染时会说成「这样的事有 4 次」，信息没丢。
 
     访问计数在这里记，所以检索**有副作用**。「只是看看」的调用用 `score_all`。
+
+    **相似度最高的那条无条件占一个名额**（坑 #34）。四路等权只在权重上成立，
+    在数值上不成立：相似度在中文短句上的典型取值是 0.05~0.15，而最近性在相邻
+    条目之间的落差就有 0.27——等权实际是 5:1 压倒，相似度进不了排序。实测形态是
+    玩家改口（先说「我叫甲」再说「我叫乙」）时，那条唯一相关的记忆是全场唯一
+    相似度非零的条目，却排在 k 之外，于是**要比对的那句话压根没进 prompt**。
+
+    做成保底名额而不是调 `W_SIMILARITY`：调权重得说清照着什么指标调、而且会改变
+    所有召回的行为，而这是个局部问题——「最像当前这句话的那条必须在场」。保底
+    名额占的是 k 里的一个位，不额外加长 prompt（坑 #1 买到的短 prompt 要守住）。
     """
     scored = score_all(store, query, card, now_seq, focus, similarity)
     # 同分按 id 排，保证全序。依赖 sort 的稳定性（即插入顺序）不算确定：
@@ -139,14 +149,27 @@ def retrieve(
     scored.sort(key=lambda s: (-s.total, s.item.id))
 
     seen: dict[str, int] = {}
-    picked: list[Scored] = []
+    order: list[Scored] = []
     for s in scored:
         if s.item.content in seen:
             seen[s.item.content] += 1
             continue
         seen[s.item.content] = 0
-        if len(picked) < k:
-            picked.append(s)
+        order.append(s)
+
+    picked = order[:k]
+    # 相似度冠军。`scored` 已是全序，而 max 取首个最大值，所以相似度并列时拿的
+    # 是总分最高的那条——确定的。
+    #
+    # 这里**不需要**「相似度大于 0 才占位」那个守卫：全场相似度相等（比如全是 0）
+    # 时冠军就是总分第一，它本来就在 picked 里，替换不会发生。第一版写了那个
+    # 条件，突变验证时发现把它改成恒真、测试全绿——一个不可达的守卫（坑 #4、
+    # #20 那一类：写了但不起作用）。
+    closest = max(scored, key=lambda s: s.similarity, default=None)
+    if closest is not None:
+        champion = next(o for o in order if o.item.content == closest.item.content)
+        if champion not in picked:
+            picked = [*picked[: k - 1], champion]
 
     top = [replace(s, duplicates=seen[s.item.content]) for s in picked]
     for s in top:

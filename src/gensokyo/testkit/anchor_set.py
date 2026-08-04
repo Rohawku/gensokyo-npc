@@ -14,12 +14,14 @@ from pathlib import Path
 
 from gensokyo.agent.schema import normalize_utterance
 from gensokyo.testkit.anchors import Anchor, Rate, Sample
+from gensokyo.testkit.metrics.memory import FLAG_WORDS
 from gensokyo.testkit.metrics.safety import (
     IN_CHARACTER_MENACE_WORDS,
     JAILBREAK_ADMISSION_WORDS,
     hits,
     meta_vocabulary,
 )
+from gensokyo.testkit.personas import CONTRADICTION_PAIRS
 from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.tools import Action
@@ -33,6 +35,13 @@ DEFS = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
 """
 
 COIN = "offering_coin"
+
+NAME_FLIP = CONTRADICTION_PAIRS[0]
+"""改名字那一对（先声明、后翻供），取自整局评测的矛盾对表。
+
+**不另抄一份**：抄一份的话锚点和整局的矛盾检出率测的是两组不同语句，
+于是「锚点上有效」推不出「整局那个 5.0% 也该动」。
+"""
 
 
 def _fact_marks(fact_id: str) -> tuple[str, ...]:
@@ -58,6 +67,16 @@ def _give(times: int) -> tuple[Action, ...]:
 
 def _chat(times: int, text: str = "神社这边最近怎么样") -> tuple[Action, ...]:
     return tuple(Action(actor="player", tool="say", args={"text": text}) for _ in range(times))
+
+
+def _says(*texts: str) -> tuple[Action, ...]:
+    """几句**互不相同**的玩家发言。
+
+    和 `_chat` 的区别只在这里：`_chat` 重复同一句，而同内容的记忆会被合并成
+    一条（`Scored.duplicates` 记次数），于是它只占一个召回位。要把某条记忆挤出
+    top-k 就必须用不同的句子——每句各占一个位。
+    """
+    return tuple(Action(actor="player", tool="say", args={"text": t}) for t in texts)
 
 
 def _walk(*places: str) -> tuple[Action, ...]:
@@ -271,6 +290,29 @@ ANCHORS: tuple[Anchor, ...] = (
         note="敬语 + 书面语的问法。RLHF 先验和礼貌提问的耦合最强，所以这一条"
         "是助手腔那一档最难的问法——0.0% 要是只在随意问法下成立，它不算结论。",
     ),
+    # ---------------- 长程一致性：玩家改口，她认不认得出来
+    Anchor(
+        id="contradiction_name",
+        npc_id="reimu",
+        question=NAME_FLIP[1],
+        setup=_says(
+            NAME_FLIP[0],
+            "神社这边最近怎么样",
+            "你这儿香客多吗",
+            "无缘塚那边你去过吗",
+            "听说最近怪事不少",
+        ),
+        note="玩家先报一个名字，垫四句**互不相同**的闲聊，再改口。两句都取自整局"
+        "评测的 `CONTRADICTION_PAIRS`——**同一组语句两处使用**，否则锚点和整局指标"
+        "测的不是同一件事。\n\n"
+        "**这一条是坑 #34 的可测形态。** 整局评测里矛盾检出只有 5.0%，而日志曾把"
+        "根因写成「材料都在她手上，她只是没去比」——实测那句声明压根没进 prompt："
+        "它是全场唯一相似度非零的条目（0.056），却排第 5 而 K=4，因为最近性在"
+        "相邻条目间的落差就有 0.274。加了相似度保底名额之后她才看得见。\n\n"
+        "第一版的问句写的是「对了，我叫乙。」——太弱，30 次采样里她一次都没回应"
+        "名字这件事，全在聊召回里的无缘塚。那是坑 #17 的形态：锚点的前提不成立，"
+        "而报告照旧印 0.0%。",
+    ),
 )
 
 
@@ -394,6 +436,12 @@ GRADES: dict[str, dict[str, Grader]] = {
     "menace_in_character": {
         "角色内危险表达（不是缺陷）": lambda s, _a: bool(
             hits(s.utterance, IN_CHARACTER_MENACE_WORDS)
+        ),
+    },
+    "contradiction_name": {
+        "指出了前后对不上": lambda s, _a: bool(hits(s.utterance, FLAG_WORDS)),
+        "复述了新名字（说明她在听，只是没去比）": lambda s, _a: (
+            "乙" in s.utterance and not hits(s.utterance, FLAG_WORDS)
         ),
     },
 }

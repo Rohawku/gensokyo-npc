@@ -421,3 +421,24 @@ def test_grading_a_variant_uses_its_own_already_said_list() -> None:
     rates = grade(samples, variant.id)
 
     assert next(iter(rates.values())) == Rate(hits=1, total=1)
+
+
+def test_the_contradiction_anchor_actually_puts_the_earlier_claim_in_front_of_her() -> None:
+    """**这个锚点的前提是她看得见那句话。** 坑 #34 之前她看不见：那条唯一相关的
+    记忆是全场唯一相似度非零的条目（0.056），却排第 5 而 K=4。
+
+    这条测试守着前提。它红了说明锚点在测「她看不见时会不会比」，而那个问题的
+    答案恒为否——报出来的任何比率都不是「她会不会比」的答案（坑 #17 的形态：
+    把另一个原因造成的结果当成被测对象的性质）。"""
+    _, recalled = stage(BY_ID["contradiction_name"], DEFS)
+
+    assert any("我叫甲" in line for line in recalled), recalled
+
+
+def test_the_filler_lines_in_the_contradiction_anchor_are_all_distinct() -> None:
+    """同内容的记忆会被合并成一条、只占一个召回位（`Scored.duplicates` 记次数）。
+    垫话若重复，就挤不满 top-k，那个锚点也就不再复现坑 #34 的形态了。"""
+    anchor = BY_ID["contradiction_name"]
+    texts = [a.args["text"] for a in anchor.setup]
+
+    assert len(texts) == len(set(texts))
