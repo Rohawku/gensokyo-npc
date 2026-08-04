@@ -111,3 +111,85 @@ def test_the_cli_fails_loudly_when_there_are_no_trajectories(tmp_path: Path) -> 
     )
 
     assert code == 2
+
+
+REPEAT = "你倒是说说看，到底想干啥？"
+COSMETIC = "那你倒是说说看，到底想干啥？"
+SECOND = "无缘塚那边我不想聊。"
+
+
+def _episode_with_history() -> Trajectory:
+    """前两个回合把 REPEAT 和 SECOND 送进禁语清单，第三个回合才配对。"""
+    return Trajectory(
+        persona="fickle",
+        seed=0,
+        turns=[
+            TurnRecord(
+                tick=1,
+                player_input="随便说点什么。",
+                kind="say",
+                npc_id="reimu",
+                utterance=REPEAT,
+                thought="敷衍一下",
+            ),
+            TurnRecord(
+                tick=2,
+                player_input="那你说说无缘塚。",
+                kind="say",
+                npc_id="reimu",
+                utterance=SECOND,
+                thought="换个说法",
+            ),
+            TurnRecord(
+                tick=3,
+                player_input="你就不能好好说话？",
+                kind="say",
+                npc_id="reimu",
+                utterance="我说话一直这样。",
+                thought="懒得理",
+            ),
+        ],
+    )
+
+
+def test_a_cosmetic_edit_is_not_a_usable_preference_pair() -> None:
+    """**坑 #35。** 复读判据是归一化后的精确匹配，所以「那你倒是说说看，到底
+    想干啥？」比「你倒是说说看，到底想干啥？」多一个字就算干净。拿这两句配成
+    一对，DPO 学到的是**加个衬字绕过检测器**，而不是把话说得不一样。
+
+    实测第一批 60 条里有 11 条（18%）是这种形态，最极端的一对相似度 0.96。"""
+    llm = ScriptedLlmClient([COSMETIC, REPEAT, COSMETIC, REPEAT])
+
+    dataset = build_dataset([_episode_with_history()], DEFS, llm, samples=2, size=10)
+
+    assert dataset.pairs == []
+
+
+def test_a_genuinely_different_answer_still_pairs() -> None:
+    """门槛不能顺手把好对子也挡掉——「换个说法」和「原样复读」之间的差别
+    正是这份数据要教的东西。"""
+    llm = ScriptedLlmClient(["赛钱箱在那边，自己看着办。", REPEAT] * 2)
+
+    dataset = build_dataset([_episode_with_history()], DEFS, llm, samples=2, size=10)
+
+    assert len(dataset.pairs) == 1
+    assert dataset.pairs[0].rejected == REPEAT
+
+
+def test_a_later_candidate_is_used_when_the_first_one_is_too_similar() -> None:
+    """搭配要**遍历**，不能只看第一条。第一个被抓到的候选恰好和干净那条只差
+    一个衬字、而第二个被抓到的完全不同时，正确行为是用第二个配对，不是整个
+    回合放弃——否则门槛会顺手扔掉大量可用数据。
+
+    `_episode_with_history` 的两个回合先把 REPEAT 和 SECOND 都送进禁语清单，
+    第三个回合才是配对的那一次。前两回合的候选全是干净的，所以配不出对子
+    （要一条干净 + 一条被抓）。"""
+    filler = ["赛钱箱在那边。", "香客少得可怜。", "别站在门口挡路。"]
+    llm = ScriptedLlmClient([*filler, *filler, COSMETIC, REPEAT, SECOND])
+
+    dataset = build_dataset([_episode_with_history()], DEFS, llm, samples=3, size=10)
+
+    assert len(dataset.pairs) == 1
+    assert dataset.pairs[0].chosen == COSMETIC
+    # REPEAT 和 COSMETIC 只差一个「那」字（相似度 0.96）被跳过，改用 SECOND。
+    assert dataset.pairs[0].rejected == SECOND

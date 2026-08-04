@@ -25,6 +25,7 @@ from gensokyo.memory.pipeline import absorb, new_stores, now_seq
 from gensokyo.memory.query import MEMORY_TOP_K, build_focus, build_query
 from gensokyo.memory.render import render_recall
 from gensokyo.memory.retrieve import retrieve
+from gensokyo.memory.similarity import bigram_cosine
 from gensokyo.testkit.trajectory import Trajectory
 from gensokyo.training.label import Dimension, judge_utterance
 from gensokyo.training.preference import PreferencePair
@@ -47,6 +48,20 @@ SAMPLE_TEMPERATURE = 1.0
 
 温度低了 4 条候选会几乎一样，配不出对；而这里要的正是分布的两端。这不是
 「模拟真实分布」——偏好数据要的是可区分的正负例，不是有代表性的样本。
+"""
+
+MAX_PAIR_SIMILARITY = 0.7
+"""`chosen` 和 `rejected` 相似到这个程度以上就不配对。
+
+**坑 #35。** 复读判据是归一化后的精确匹配，于是「那你倒是说说看，到底想干啥？」
+比「你倒是说说看，到底想干啥？」多一个字就算干净。第一批 60 条里有 11 条
+（18%）是这种形态，最极端的一对相似度 0.96——只差一个「那」字。
+
+拿这种对子训练，DPO 学到的是**加个衬字绕过检测器**，而不是把话说得不一样。
+这是硬判据的通病：判据越机械，绕过它的最省力方式就越不是「真的改好」。
+
+0.7 是个判断，不是测出来的最优值——它把实测那 11 条挡掉，同时留下所有
+「换了个说法」的对子。门槛调动会改变数据集大小，所以它是常量而不是魔数。
 """
 
 
@@ -150,8 +165,9 @@ def _pair_from_samples(
 ) -> PreferencePair | None:
     """采样、打标签、配对。配不出来返回 None。
 
-    「配不出来」有两种：全部干净（她这个回合确实没毛病）和全部被抓（没有正例
-    可用）。两种都不硬凑——从一堆都差的候选里挑一个当 chosen，等于教模型
+    「配不出来」有三种：全部干净（她这个回合确实没毛病）、全部被抓（没有正例
+    可用）、以及**每一种搭配都太像**（坑 #35：两句只差一个衬字，那一对教的是
+    绕过检测器）。三种都不硬凑——从一堆都差的候选里挑一个当 chosen，等于教模型
     「这样也行」。
     """
     candidates: list[tuple[str, list[tuple[Dimension, str]]]] = []
@@ -174,14 +190,25 @@ def _pair_from_samples(
 
     clean = [t for t, flaws in candidates if not flaws]
     flawed = [(t, flaws) for t, flaws in candidates if flaws]
-    if not clean or not flawed:
+
+    # 按出现顺序找第一组「够不一样」的搭配，所以同一批候选每次配出同一对。
+    picked = next(
+        (
+            (c, r, flaws)
+            for c in clean
+            for r, flaws in flawed
+            if bigram_cosine(c, r) <= MAX_PAIR_SIMILARITY
+        ),
+        None,
+    )
+    if picked is None:
         return None
 
-    rejected, flaws = flawed[0]
+    chosen, rejected, flaws = picked
     dimension, reason = flaws[0]
     return PreferencePair(
         prompt=_messages_text(messages),
-        chosen=clean[0],
+        chosen=chosen,
         rejected=rejected,
         dimension=dimension,
         reason=reason,
