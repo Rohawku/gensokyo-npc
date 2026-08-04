@@ -215,8 +215,12 @@ def test_repetition_grading_ignores_punctuation() -> None:
 
 
 def test_every_anchor_has_at_least_one_grader() -> None:
-    """一个没有判据的锚点会白花模型调用采样，然后什么也报不出来。"""
-    assert {a.id for a in ANCHORS} == set(GRADES)
+    """一个没有判据的锚点会白花模型调用采样，然后什么也报不出来。
+
+    变体不在 `GRADES` 里（判据只在本体上声明），所以这里查的是**解析之后**
+    每个锚点都有判据，而不是「id 集合和 GRADES 的键集合相等」。"""
+    for anchor in ANCHORS:
+        assert grade([], anchor.id), anchor.id
 
 
 def test_every_anchor_targets_a_real_character() -> None:
@@ -358,3 +362,62 @@ def test_an_anchor_is_not_paired_with_itself() -> None:
     samples = _pair_samples("a", ["哼。", "哼。", "哼。"])
 
     assert collapse_pairs(samples) == {}
+
+
+# ---------------------------------------------------------------- 换个问法
+
+
+def test_a_variant_reuses_the_graders_of_the_anchor_it_rephrases() -> None:
+    """变体只换问法，判据必须完全一致——各抄一份的话「换个问法结果就变了」
+    既可能是她的性质，也可能是两份判据岔开了（工程日志类 1）。"""
+    for anchor in ANCHORS:
+        if not anchor.variant_of:
+            continue
+
+        assert anchor.variant_of in BY_ID, anchor.id
+        assert GRADES[anchor.variant_of], anchor.id
+        assert list(grade([], anchor.id)) == list(grade([], anchor.variant_of)), anchor.id
+
+
+def test_a_variant_asks_the_same_npc_a_genuinely_different_question() -> None:
+    """同一个角色（否则比的是两个人），但问法必须真的不同（否则它只是把
+    n 从 30 变成 60，测不到问法敏感性）。"""
+    for anchor in ANCHORS:
+        if not anchor.variant_of:
+            continue
+        base = BY_ID[anchor.variant_of]
+
+        assert anchor.npc_id == base.npc_id, anchor.id
+        assert anchor.question != base.question, anchor.id
+
+
+def test_a_variant_is_not_itself_a_variant_target() -> None:
+    """变体链只允许一层：变体指向本体，本体不指向任何人。两层会让
+    「这一族的判据是谁的」变成一个要追链的问题。"""
+    for anchor in ANCHORS:
+        if anchor.variant_of:
+            assert not BY_ID[anchor.variant_of].variant_of, anchor.id
+
+
+def test_graders_are_declared_for_base_anchors_only() -> None:
+    """`GRADES` 的键必须是本体。给变体也写一份就是重复定义，而重复定义
+    会漂移——这个项目为此栽过的次数写在归类那一节里。"""
+    for anchor_id in GRADES:
+        assert not BY_ID[anchor_id].variant_of, anchor_id
+
+
+def test_grading_a_variant_uses_its_own_already_said_list() -> None:
+    """判据能看到锚点本身，所以复读那一档比的是**变体自己**声明的禁语清单。
+    用本体的清单会让变体的复读判据永远不命中。"""
+    variant = next(
+        (a for a in ANCHORS if a.variant_of == "repeat_pressure"),
+        None,
+    )
+    if variant is None:
+        return
+    said = variant.already_said[0]
+    samples = [Sample(anchor_id=variant.id, npc_id=variant.npc_id, question="q", utterance=said)]
+
+    rates = grade(samples, variant.id)
+
+    assert next(iter(rates.values())) == Rate(hits=1, total=1)
