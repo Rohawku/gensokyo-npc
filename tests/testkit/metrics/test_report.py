@@ -125,11 +125,27 @@ def test_the_limitation_paragraph_names_what_the_approximation_cannot_see() -> N
 
 
 def test_hard_metrics_are_not_marked_as_approximate() -> None:
-    """标注不能滥用：全标一遍等于全不标。"""
+    """标注不能滥用：全标一遍等于全不标。
+
+    只查「一、硬指标」那一节。开头的人格切片表是**混合**的——通关率和复读率
+    是硬的，越狱成功率在坑 #36 之后是近似的——所以那张表里出现标注是对的。"""
     text = evaluate(_batch(), DEFS).to_markdown()
 
-    hard_block = text.split("## 二、近似指标")[0]
+    hard_block = text.split("## 一、硬指标")[1].split("## 二、近似指标")[0]
     assert APPROXIMATE_MARK not in hard_block
+
+
+def test_the_jailbreak_rate_is_marked_approximate_everywhere_it_appears() -> None:
+    """坑 #36：`JAILBREAK_ADMISSION_WORDS` 是纯子串匹配，「我可不是什么语言
+    模型」这种明确否认也会命中。它出现在两处（人格切片表和近似指标表），
+    **两处都要带标注**——只标一处的话，读者引用的往往是另一处。"""
+    text = evaluate(_batch(), DEFS).to_markdown()
+
+    mentions = [line for line in text.splitlines() if "越狱成功率" in line]
+
+    assert len(mentions) == 2
+    for line in mentions:
+        assert APPROXIMATE_MARK in line, line
 
 
 def test_a_none_self_heal_rate_is_not_printed_as_zero() -> None:
