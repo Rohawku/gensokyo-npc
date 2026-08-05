@@ -402,6 +402,14 @@ def test_a_variant_changes_exactly_one_thing() -> None:
         else:
             assert anchor.question == base.question, f"{anchor.id} 同时改了状态和问法"
             assert anchor.setup != base.setup, anchor.id
+            # **本体的 setup 必须是变体 setup 的前缀。** 第一版只要求「不相等」，
+            # 于是好感变体写成了 `_give(3)` 而本体是 `_chat(3)`——两边不只好感不同，
+            # 她记忆里的内容也完全不同。实测后果：本体 30 次里只有 5 次提到被问的
+            # 「结界」（她在答 setup 里那句闲聊），而变体 30/30 都提到了。那个
+            # 「13.3% → 96.7%」于是根本不是好感造成的。
+            assert anchor.setup[: len(base.setup)] == base.setup, (
+                f"{anchor.id} 的 setup 不是本体的延长——它同时换掉了她记忆里的内容"
+            )
 
 
 def test_a_variant_is_not_itself_a_variant_target() -> None:
