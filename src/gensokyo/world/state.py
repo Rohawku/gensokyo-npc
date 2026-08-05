@@ -43,6 +43,17 @@ class NpcState(BaseModel):
     holds_facts: set[FactId] = Field(default_factory=set)
     revealed_facts: set[FactId] = Field(default_factory=set)
     received_items: set[ItemId] = Field(default_factory=set)
+    gift_counts: dict[ItemId, int] = Field(default_factory=dict)
+    """每样东西被送过几次，用于送礼的边际递减（`GIFT_ATTITUDE_STEPS`）。
+
+    **按物品种类计数，不是按总次数**：换一样东西送应该重新算，否则「送第四件
+    不同的礼物」和「第四次投同一枚币」会被当成同一件事，而后者才是要掐死的磨。
+    """
+    discussed_topics: set[str] = Field(default_factory=set)
+    """玩家已经跟她聊过的话题，用于「同一话题只涨一次好感」。
+
+    它是 `apply()` 的结果，所以自动能被动作日志回放重建——坑 #9 立的规矩：
+    新机制先问「它是动作的结果，还是时间的结果」。"""
 
 
 class QuestState(BaseModel):
@@ -64,8 +75,10 @@ class WorldState(BaseModel):
 
 PLAYER_START = LocationId("hakurei_shrine")
 
-# 玩家初始赛钱。灵梦的线索门槛是好感 24、芙兰是 12，而送一次礼物 +6，
-# 所以 4 枚给灵梦、2 枚给芙兰，留 2 枚余量。没有初始赛钱游戏无法通关。
+# 玩家初始赛钱。送礼有边际递减（6/3/1，`GIFT_ATTITUDE_STEPS`），所以同一枚
+# 币投第四次起不再涨好感——8 枚的意义不是「够投八次」，而是「投够了还有余量
+# 分给另一个人」。灵梦门槛 16、芙兰 12，两边都必须靠聊天补最后一截。
+# 没有初始赛钱游戏无法通关。
 STARTING_COIN = ItemId("offering_coin")
 STARTING_COIN_COUNT = 8
 

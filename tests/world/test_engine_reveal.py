@@ -89,16 +89,35 @@ def test_repeated_reveal_does_not_flood_event_log() -> None:
     assert "已经告诉过" in second.observation_delta
 
 
-def test_four_gifts_exactly_unlock_reimus_clue() -> None:
-    """锁住游戏可通关性：灵梦的门槛必须能被初始赛钱打开。
-    门槛与 ATTITUDE_DELTA 的比例一旦改动，这个测试会立刻报警。"""
+def test_offerings_alone_no_longer_unlock_reimus_clue() -> None:
+    """锁住可玩性改动的核心：**纯投币这条路必须走不通。**
+
+    送礼有边际递减（6/3/1 然后 0），同一样东西刷到底只有 10，而门槛是 16。
+    改动之前每次 +6、门槛 24，「投四次币再问一句」是严格最优解，说话没有任何
+    机制价值——实测 21 回合通关里 16 回合在敲指令、NPC 只开口 5 次。
+    """
     eng = _engine()
 
-    for _ in range(4):
+    for _ in range(6):
         assert (
             eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"})).ok
             is True
         )
 
+    assert eng.state.npcs[NpcId("reimu")].attitude == 10
+    assert eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER})).ok is False
+
+
+def test_offerings_plus_the_topics_she_cares_about_unlock_it() -> None:
+    """锁住游戏可通关性：门槛必须能被「初始赛钱 + 剧本里说得出的话」打开。
+    门槛与 ATTITUDE_DELTA / GIFT_ATTITUDE_STEPS 的比例一旦改动，这里立刻报警。"""
+    eng = _engine()
+
+    for _ in range(3):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变是从什么时候开始的？", "你觉得是妖怪干的吗？"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
+
+    assert eng.state.npcs[NpcId("reimu")].attitude == 18
     assert eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": BARRIER})).ok is True
     assert BARRIER in eng.state.player.known_facts

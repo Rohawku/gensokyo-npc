@@ -11,6 +11,12 @@ class EventKind(StrEnum):
     PLAYER_ACTION = "player_action"
     NPC_UTTERANCE = "npc_utterance"
     NPC_ACTION = "npc_action"
+    TOPIC_TOUCHED = "topic_touched"
+    """玩家第一次聊到某个 NPC 在意的话题。
+
+    单独一种事件而不是复用 `PLAYER_UTTERANCE`：好感变化必须能从事件日志里
+    追溯到原因，而「她为什么涨了 4 点好感」和「玩家说了句话」是两件事。
+    """
     MEMORY_LOST = "memory_lost"
     QUEST_ADVANCE = "quest_advance"
 

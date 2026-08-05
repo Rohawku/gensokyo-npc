@@ -362,16 +362,43 @@ def _playability_section(report: EvalReport) -> list[str]:
         f"| **敲几次指令才听她说一句话** | {_num(p.commands_per_utterance)} | "
         f"{p.command_turns} 指令 / {p.npc_utterances} 句台词 |",
         f"| 每局 NPC 开口次数 | {_num(p.utterances_per_episode)} | {p.episodes} 局 |",
+        f"| **对话推动好感的次数** | {p.topic_attitude_events} | {p.dialogue_turns} 个对话回合 |",
         f"| 说了话却没人回应的回合 | {p.silent_dialogue_turns} | {p.dialogue_turns} 个对话回合 |",
         "",
         f"指令构成：{_histogram(p.command_histogram)}",
         f"　　NPC 出场：{_histogram(p.utterances_by_npc)}",
         "",
-        "**指令构成里重复的那一部分值得单看**：好感只有「给东西」这一个来源，"
-        "而门槛要求重复投币，于是玩家在做的事是凑数值而不是对话。",
+        _topic_note(p),
+        "",
+        "**指令构成里 `give` 那一格是这套指标最初要解决的问题**：好感曾经只有"
+        "「给东西」一个来源、每次固定 +6，于是门槛就等于「重复投币 N 次」，"
+        "玩家在做的事是凑数值而不是对话。现在送礼有边际递减（6/3/1 然后 0），"
+        "同一样东西刷到底够不到门槛，最后一截必须靠聊到她在意的话题。",
         "**NPC 出场按角色拆**是因为聚合值会掩盖「某个 NPC 几乎不出场」。",
         "",
     ]
+
+
+def _topic_note(p: PlayabilityMetrics) -> str:
+    """「对话推动好感的次数」那一格的读法。
+
+    分成两句是因为 0 和非 0 说的是完全不同的事，而**这一格历史上真的报过 0**：
+    机制写好了、有单测、变异验证也过了，在真实对局里却触发 0 次——单测只证明
+    「给定命中的文本会涨好感」，不证明「玩家说得出那样的文本」。
+    """
+    if not p.topic_attitude_events:
+        return (
+            "**「对话推动好感的次数」是 0**：聊天没有机制价值，玩家没有理由多说一句话，"
+            "上面那个对话回合占比也就不可能靠内容改善。注意这个 0 不代表机制有 bug——"
+            "它更可能是「玩家在这个剧本里说得出的话和角色卡的 `topics_of_interest` "
+            "没有交集」，那是设计问题，单测抓不到。"
+        )
+    return (
+        f"**「对话推动好感的次数」是 {p.topic_attitude_events}**：聊天确实在推进关系。"
+        "这一格历史上报过 0——机制写好了、有单测、变异验证也过了，真实对局里却一次都"
+        "没触发，因为玩家说得出的话和角色卡的 `topics_of_interest` 没有交集。"
+        "**单测只证明「给定命中的文本会涨好感」，不证明「玩家说得出那样的文本」。**"
+    )
 
 
 def _approximate_section(report: EvalReport) -> list[str]:

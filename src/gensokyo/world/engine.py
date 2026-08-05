@@ -25,6 +25,7 @@ from gensokyo.world.rules import (
     bump_emotion,
     can_reveal,
     emotion_delta_for,
+    gift_attitude_delta,
 )
 from gensokyo.world.state import QuestStage, WorldState
 from gensokyo.world.tools import (
@@ -266,6 +267,7 @@ class WorldEngine:
 
     def _do_say(self, action: Action, args: SayArgs) -> ActionResult:
         kind = EventKind.PLAYER_UTTERANCE if action.actor == "player" else EventKind.NPC_UTTERANCE
+        events: list[Event] = []
         if action.actor == "player":
             # 说话本身要动情绪。在此之前情绪只被 give_item 推动，而灵梦收到
             # 赛钱是**消气**——于是她的烦躁度只有向下的路，`irritated` 在真实
@@ -276,8 +278,39 @@ class WorldEngine:
                 bump_emotion(
                     self.state.npcs[npc_id], card, emotion_delta_for(card, "player_talked")
                 )
-        ev = self._emit(kind, action.actor, {"text": args.text})
-        return ActionResult.succeeded([ev])
+                events += self._credit_topics(npc_id, args.text)
+        events.append(self._emit(kind, action.actor, {"text": args.text}))
+        return ActionResult.succeeded(events)
+
+    def _credit_topics(self, npc_id: NpcId, text: str) -> list[Event]:
+        """玩家第一次聊到她在意的话题就涨好感。
+
+        **改这一处的理由是可玩性。** 在此之前好感只有「给东西」两个来源，说话
+        完全不涨好感，于是最优策略必然是「走过去 → 重复投币到数值够 → 问一句」
+        ——实测 21 回合通关里 16 回合在敲指令，NPC 只开口 5 次（可玩性指标那一节）。
+        对话必须有机制价值，否则玩家没有理由多聊一句。
+
+        **一句话可以同时命中多个话题**，每个各算一次。刻意不限制成「每回合一个」：
+        那会奖励「把话题拆成好几个回合慢慢挤」，而我们想奖励的是把话说充实。
+        """
+        npc = self.state.npcs[npc_id]
+        fresh = [
+            topic
+            for topic in self.defs.characters[npc_id].persona.topics_of_interest
+            if topic in text and topic not in npc.discussed_topics
+        ]
+        events: list[Event] = []
+        for topic in fresh:
+            npc.discussed_topics.add(topic)
+            bump_attitude(npc, ATTITUDE_DELTA["topic_touched"])
+            events.append(
+                self._emit(
+                    EventKind.TOPIC_TOUCHED,
+                    str(npc_id),
+                    {"topic": topic, "npc": str(npc_id)},
+                )
+            )
+        return events
 
     def _do_move(self, action: Action, args: MoveArgs) -> ActionResult:
         here = self._actor_location(action.actor)
@@ -371,7 +404,11 @@ class WorldEngine:
                 )
             self._push_items(npc.inventory, args.item, args.count)
             npc.received_items.add(args.item)
-            bump_attitude(npc, ATTITUDE_DELTA["player_gave_item"])
+            # 好感按「这是第几次送同样的东西」递减；情绪不递减——收到礼物的
+            # 即时反应每次都是真的，只有「关系因此变亲近」会边际递减。
+            given_before = npc.gift_counts.get(args.item, 0)
+            npc.gift_counts[args.item] = given_before + 1
+            bump_attitude(npc, gift_attitude_delta(given_before))
             bump_emotion(
                 npc,
                 self.defs.characters[target],

@@ -57,9 +57,16 @@ def test_jailbreak_and_fickle_are_excluded_from_the_denominator() -> None:
     assert "jailbreak" not in QUESTING_PERSONAS
 
 
-def test_memory_probe_is_also_excluded() -> None:
-    """探针人格循环问同样的 4 个问题，对话占比恒等于 1。那不是玩法。"""
-    assert "memory_probe" not in QUESTING_PERSONAS
+def test_only_personas_that_actually_do_things_are_counted() -> None:
+    """排除的四个都是同一个理由：不做事，只说话，对话占比恒等于 1。
+
+    `smooth_talker` 尤其值得钉住——**它的名字听起来像个正常玩家，而它的系统
+    提示里明确写着「不给她任何东西，不做任何交易，只靠话术」。** 第一版我把它
+    归成「来通关的」，因为没去读那段 prompt。"""
+    for persona in ("jailbreak", "fickle", "memory_probe", "smooth_talker"):
+        assert persona not in QUESTING_PERSONAS, persona
+
+    assert set(QUESTING_PERSONAS) == {"honest"}
 
 
 def test_a_turn_where_she_refuses_to_speak_is_counted_separately() -> None:

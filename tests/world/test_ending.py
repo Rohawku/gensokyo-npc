@@ -136,8 +136,11 @@ def test_forgetting_survives_replay_exactly() -> None:
     回放自然重现不出来。
     """
     eng = _engine()
-    for _ in range(4):  # 送 4 次赛钱把灵梦的好感推到门槛 24
+    # 投 3 次赛钱（递减 6/3/1 = 10）再聊两个她在意的话题（+8），过门槛 16
+    for _ in range(3):
         eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变是从什么时候开始的？", "你觉得是妖怪干的吗？"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
     eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": CLUES[0]}))
     assert CLUES[0] in eng.state.player.known_facts
 

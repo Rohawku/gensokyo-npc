@@ -20,11 +20,20 @@ from pydantic import BaseModel
 
 from gensokyo.testkit.trajectory import Trajectory
 
-QUESTING_PERSONAS: frozenset[str] = frozenset({"honest", "smooth_talker"})
-"""哪些人格是「来通关的」。
+QUESTING_PERSONAS: frozenset[str] = frozenset({"honest"})
+"""哪些人格是「来通关的」。**目前只有 honest。**
 
-`memory_probe` 不在里面：它循环问同样的问题，对话占比恒等于 1，那不是玩法。
-`jailbreak` / `fickle` 也不在——他们不做事，只说话。
+排除的三个都是同一个理由——**不做事，只说话**，于是对话占比恒等于 1，
+把它们算进来会得出「对话占比 90%，非常好」的结论（坑 #18 的形态）：
+
+- `jailbreak` / `fickle`：持续施压，不推进剧情
+- `memory_probe`：循环问同样 4 个问题
+- `smooth_talker`：它的系统提示里明确写着「不给她任何东西，不做任何交易，
+  只靠话术」。**第一版我把它归成「来通关的」，因为名字听起来像个正常玩家
+  ——而我没去读那段 prompt。** 同一类错误：没验证前提就分了类。
+
+这个集合小到只有一个，本身就是一个诚实的信号：**这套评测里只有一个人格
+在真正玩这个游戏。**
 """
 
 
@@ -44,6 +53,16 @@ class PlayabilityMetrics(BaseModel):
     """每个 NPC 开口几次。**按角色拆**是因为聚合值会掩盖「某个 NPC 几乎不出场」
     ——三个 NPC 各开口 5 次和一个人开口 15 次，聚合数字一样。"""
     command_histogram: dict[str, int]
+    topic_attitude_events: int
+    """对话推动好感的次数（`topic_touched` 事件数）。
+
+    **这一格存在的理由是它第一次报出来是 0。** 「聊到她在意的话题就涨好感」
+    的机制已经写好、有单测、也通过了变异验证，而在真实对局里触发 0 次——
+    单测只证明「给定命中的文本会涨好感」，不证明「玩家说得出那样的文本」。
+    这个 0 也是我第一次量错的地方：我去读 `TurnRecord.events`，而那个字段
+    根本不存在，`.get("events", [])` 永远返回空列表（坑 #11 的形态——
+    一个永远不会变红的仪器）。事件在 `Trajectory.event_log` 上。
+    """
 
     @property
     def dialogue_share(self) -> float:
@@ -68,6 +87,15 @@ class PlayabilityMetrics(BaseModel):
         """玩家说了话但没人回应的回合数。大于 0 说明拒绝搭话机制在生效。"""
         return max(0, self.dialogue_turns - self.npc_utterances)
 
+    @property
+    def topic_events_per_dialogue_turn(self) -> float:
+        """平均每个对话回合推动好感几次。
+
+        分母是对话回合而不是总回合：这个数回答的是「说一句话有多大概率有
+        机制回报」，敲指令的回合和这个问题无关。
+        """
+        return self.topic_attitude_events / self.dialogue_turns if self.dialogue_turns else 0.0
+
 
 def playability_metrics(
     trajectories: Sequence[Trajectory],
@@ -82,8 +110,10 @@ def playability_metrics(
     commands: dict[str, int] = {}
     by_npc: dict[str, int] = {}
     command_turns = dialogue_turns = utterances = turns = 0
+    topic_events = 0
 
     for traj in wanted:
+        topic_events += sum(1 for e in traj.event_log if e.get("kind") == "topic_touched")
         for record in traj.turns:
             turns += 1
             if record.kind == "command":
@@ -104,4 +134,5 @@ def playability_metrics(
         npc_utterances=utterances,
         utterances_by_npc=dict(sorted(by_npc.items())),
         command_histogram=dict(sorted(commands.items())),
+        topic_attitude_events=topic_events,
     )

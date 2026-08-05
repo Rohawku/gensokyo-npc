@@ -53,6 +53,10 @@ def _classify(event: Event, npc_id: NpcId) -> str:
         # 她自己说过的话不进记忆库。实测这会把复读喂回去，详见
         # SALIENCE_BASELINE 的注释。
         return ""
+    if event.kind is EventKind.TOPIC_TOUCHED:
+        # 只进**当事人**的记忆库：话题事件的 actor 是那个 NPC 自己，而同场的
+        # 另一个 NPC 不该记住「他聊到了我在意的事」——那件事不是她的。
+        return "topic_touched" if event.actor == str(npc_id) else ""
     if event.kind is EventKind.MEMORY_LOST:
         return "memory_lost"
     if event.kind is EventKind.QUEST_ADVANCE:
@@ -82,6 +86,8 @@ def _render(event: Event, key: str, defs: WorldDefs) -> str:
     match key:
         case "player_talked":
             return f"来访者说：「{_quote(str(payload.get('text', '')))}」"
+        case "topic_touched":
+            return f"他聊到了{_quote(str(payload.get('topic', '')))}，我对这个上心。"
         case "player_gave_item":
             return f"来访者给了我 {payload.get('count', 1)} 个{item_name()}。"
         case "npc_took_item":

@@ -346,3 +346,98 @@ def test_a_character_whose_mood_cannot_rise_never_warns() -> None:
     _set_mood(eng, "reimu", 0.56, "normal")
 
     assert eng.observe_player().npcs_here[0].mood_warning == ""
+
+
+# ---------------------------------------------------------------- 话题推好感
+
+
+def _say(engine: WorldEngine, text: str) -> None:
+    engine.apply(Action(actor="player", tool="say", args={"text": text}))
+
+
+def test_touching_a_topic_she_cares_about_raises_attitude() -> None:
+    """**这条改动的理由是可玩性，不是拟真。** 改之前好感只有「给东西」两个来源，
+    说话完全不涨好感，于是最优策略必然是「走过去 → 重复投币到数值够 → 问一句」
+    ——实测 21 回合通关里 16 回合在敲指令，NPC 只开口 5 次。
+
+    对话必须有机制价值，否则玩家没有理由多聊一句。"""
+    engine = _engine()
+    reimu = engine.state.npcs[NpcId("reimu")]
+    before = reimu.attitude
+
+    _say(engine, "你这儿的赛钱箱是不是一直空着？")
+
+    assert reimu.attitude > before
+
+
+def test_the_same_topic_only_pays_once() -> None:
+    """**防刷。** 不去重的话玩家会发现「说『赛钱』涨好感」，然后重复说同一个词
+    ——那只是把刷数值换了个形式，对话仍然没有价值。
+
+    去重之后要继续涨好感就得说到**别的**话题，而那正好是「多聊几句」。"""
+    engine = _engine()
+    reimu = engine.state.npcs[NpcId("reimu")]
+
+    _say(engine, "赛钱箱空着啊")
+    once = reimu.attitude
+    _say(engine, "赛钱赛钱赛钱")
+
+    assert reimu.attitude == once
+
+
+def test_a_different_topic_pays_again() -> None:
+    engine = _engine()
+    reimu = engine.state.npcs[NpcId("reimu")]
+
+    _say(engine, "赛钱箱空着啊")
+    first = reimu.attitude
+    _say(engine, "最近的异变你查了吗")
+
+    assert reimu.attitude > first
+
+
+def test_an_unrelated_line_pays_nothing() -> None:
+    """随便说话不该涨好感——否则又退化成「刷回合数」。"""
+    engine = _engine()
+    reimu = engine.state.npcs[NpcId("reimu")]
+    before = reimu.attitude
+
+    _say(engine, "今天天气不错啊哈哈")
+
+    assert reimu.attitude == before
+
+
+def test_only_npcs_in_the_room_hear_the_topic() -> None:
+    """玩家在博丽神社说话，红魔馆地下室的芙兰不该涨好感。"""
+    engine = _engine()
+    flandre = engine.state.npcs[NpcId("flandre")]
+    before = flandre.attitude
+
+    _say(engine, "你想不想玩点什么")
+
+    assert flandre.attitude == before
+
+
+def test_the_topic_is_recorded_in_the_event_log_so_it_replays() -> None:
+    """好感变化必须能被回放重建——`discussed_topics` 是 `apply()` 的结果，
+    所以它自动进动作日志（坑 #9 立的规矩：新机制先问它是动作的结果还是
+    时间的结果）。"""
+    engine = _engine()
+
+    _say(engine, "赛钱箱空着啊")
+
+    kinds = [e.kind for e in engine.state.event_log]
+    assert EventKind.TOPIC_TOUCHED in kinds
+
+
+def test_topic_credit_survives_replay() -> None:
+    """同一段动作日志重放必得同一个好感值。"""
+    engine = _engine()
+    _say(engine, "赛钱箱空着啊")
+    _say(engine, "最近的异变你查了吗")
+    expected = engine.state.npcs[NpcId("reimu")].attitude
+
+    defs = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
+    replayed = WorldEngine.replay(engine.state.action_log, defs)
+
+    assert replayed.state.npcs[NpcId("reimu")].attitude == expected

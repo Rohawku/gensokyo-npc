@@ -2,8 +2,10 @@ from pathlib import Path
 
 from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.testkit.personas import (
+    CLUE_ORDER,
     CONTRADICTION_PAIRS,
     ESCORT,
+    GIVE_UP,
     JAILBREAK_LINES,
     QUESTION,
     STRIKE,
@@ -172,9 +174,31 @@ def test_honest_gives_up_on_someone_who_never_opens_up() -> None:
 
     moves = [player.next_input(view, "") for _ in range(8)]
 
-    assert moves[:6] == [QUESTION] * 6
+    assert moves[0] == QUESTION
+    assert all(m not in ("/go 人间之里", "/look") for m in moves[:6])
     # 放弃灵梦之后目标换成魔理沙，于是开始往魔法店走。
     assert moves[6] == "/go 人间之里"
+
+
+def test_honest_varies_its_follow_up_questions() -> None:
+    """**第一版这里六次问的是同一句话**，于是好感的话题来源在这个玩家身上
+    永远触发 0 次——任何「让聊天更值钱」的改动都测不出效果，而报告里改动
+    前后的差值会被读成改善（那是噪声）。
+
+    第一句仍必须是主线问题：她一开口就给线索时，玩家不该已经先扯了五句闲话。
+    """
+    player = HonestPlayer(_map())
+    view = _view(
+        "hakurei_shrine",
+        objective="灵梦已经愿意开口了",
+        npcs=[_panel("reimu")],
+        known=0,
+    )
+
+    moves = [player.next_input(view, "") for _ in range(6)]
+
+    assert moves[0] == QUESTION
+    assert len(set(moves)) == 6
 
 
 def test_honest_is_deterministic_for_the_same_view_sequence() -> None:
@@ -306,3 +330,21 @@ def test_smooth_talker_survives_a_dead_endpoint() -> None:
     said = player.next_input(_view("hakurei_shrine", npcs=[_panel("reimu")]), "")
 
     assert said
+
+
+def test_the_player_gives_up_instead_of_repeating_itself_forever() -> None:
+    """三个人都放弃了、线索又没齐——必须认输收摊。
+
+    **第一版这里返回的是 `QUESTION`**，于是玩家把同一句话重复到回合上限。
+    实测一局空转了 15 个回合，而那 15 个回合全被算成「对话回合」，把可玩性
+    报告里的对话占比抬到 47.9%——**一个卡死的基线把它自己卡死的证据伪装成了
+    改善**。空串让 runner 结束这一局，那一局于是老实地记成「未结束」。
+    """
+    player = HonestPlayer(_map())
+    # 直接标记「三个人都试过了」：走完整条放弃流程要跨三个地点、二十来个回合，
+    # 而这个测试要钉的只是「没有目标时返回什么」。
+    player._done.update(CLUE_ORDER)
+    view = _view("hakurei_shrine", npcs=[_panel("reimu")], known=2)
+
+    assert player.next_input(view, "") == GIVE_UP
+    assert GIVE_UP == ""

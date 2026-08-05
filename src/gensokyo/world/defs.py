@@ -6,6 +6,7 @@ SALIENCE_BASELINE: dict[str, float] = {
     "player_gave_item": 0.5,
     "npc_took_item": 0.6,
     "player_talked": 0.1,
+    "topic_touched": 0.45,
     "player_arrived": 0.3,
     "revealed_info": 0.7,
     "asked_player": 0.15,
@@ -55,6 +56,19 @@ class SpeechCfg(StrictModel):
 class PersonaCfg(StrictModel):
     core: str
     speech: SpeechCfg
+    topics_of_interest: list[str] = Field(default_factory=list)
+    """她在意的话题关键词。玩家**第一次**聊到其中任一个就涨好感。
+
+    **为什么这里用子串匹配是可靠的。** 坑 #33、#36 的教训是「一组标记词能证明
+    话题，不能证明命题」——而这里要的恰好**就是话题**：「玩家这句话提到了赛钱」
+    是一个话题级判断，命中即事实。判据的名字和它实际测的东西一致，所以那两条
+    坑的陷阱在这里不成立（对比：「出戏承认」是命题，所以子串匹配在那里是错的）。
+
+    误报代价也低：多涨几点好感，而不是让她去指出一个不存在的矛盾。
+
+    去重由 `NpcState.discussed_topics` 负责——不去重的话玩家会重复说同一个词
+    刷好感，那只是把「刷数值」换了个形式，对话仍然没有价值。
+    """
 
 
 class MemoryCfg(StrictModel):

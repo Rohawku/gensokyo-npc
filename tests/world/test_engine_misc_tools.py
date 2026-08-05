@@ -112,15 +112,17 @@ def test_gift_lowers_reimus_annoyance_but_raises_flandres_excitement() -> None:
 
 
 def test_reimu_stays_out_of_irritated_while_being_paid() -> None:
-    """通关必经之路：送 4 次赛钱打开线索门槛。
+    """通关必经之路：投赛钱 + 聊她在意的话题，把线索门槛 16 打开。
     这个过程不该把她推进 irritated（那会禁掉 ask_player，恰在给玩家奖励时让对话变差）。"""
     eng = _engine()
 
-    for _ in range(4):
+    for _ in range(3):  # 送礼递减 6/3/1，第四次白给
         eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变是从什么时候开始的？", "你觉得是妖怪干的吗？"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
 
     reimu = eng.state.npcs[NpcId("reimu")]
-    assert reimu.attitude >= 24
+    assert reimu.attitude >= 16
     assert reimu.mode == "normal"
 
 

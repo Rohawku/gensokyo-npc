@@ -121,10 +121,43 @@ QUESTION = "无缘塚开满了不该在这个季节盛开的花，你知道些�
 ESCORT = "线索齐了，源头在无缘塚。跟我去无缘塚吧。"
 STRIKE = "动手吧，就是这些花。"
 
+SMALL_TALK: tuple[str, ...] = (
+    "这场异变是从什么时候开始的？",
+    "你觉得是妖怪干的吗？",
+    "外面现在到处都在传这件事。",
+    "那片花有什么不对的地方？",
+    "除了你，还有谁可能知道这件事？",
+)
+"""追问时轮换的台词。**在此之前 `_ask` 永远返回同一句 `QUESTION`。**
+
+一句固定台词的问题不是不真实，是**它让尺子看不见对话的价值**：好感的话题
+来源（`topic_touched`）在这个玩家身上永远触发 0 次，于是任何「让聊天更值钱」
+的改动都测不出效果，而报告会显示改动前后的差异——那个差异是噪声。
+
+**顺序不是随手排的**，它是「能通关」的一部分：灵梦要靠「异变」「妖怪」凑够
+门槛，芙兰要靠「外面」——排在第 4 句之后就超出 `MAX_ASKS`，她的线索会变成
+拿不到的。这件事本身说明了一个设计约束：**话题表必须和玩家在这个剧本里
+说得出的话有交集，否则那个话题是死的。**
+
+**诚实的局限：这几句是在我已经读过话题表的情况下写的。** 所以报告里那个
+命中率是**上界**，不是「随便一个玩家能拿到的值」。我能立的规矩只是不去干
+更糟的那件事——不把「无缘塚」这种只有 `HonestPlayer` 会说的词塞进话题表，
+那等于对着自己的固定台词调参数（和给探针的固定语句写模式匹配同一种作弊）。
+"""
+
 MAX_ASKS = 6
 """同一个人问这么多次还不开口就放弃，去下一个。
 不设上限的话一次卡住会烧光整局的回合数，而卡住本身才是要报告的发现。"""
 MAX_ABSENCES = 2
+
+GIVE_UP = ""
+"""三个人都放弃了、线索又没齐——认输，让 runner 结束这一局（空输入即收摊）。
+
+**第一版这里返回的是 `QUESTION`**，于是玩家会把同一句话重复到回合上限。
+实测一局里这样空转了 15 个回合，而那 15 个回合全被算成「对话回合」——
+把可玩性报告里的对话占比从真实值抬到 47.9%。**一个卡死的基线会把它自己
+卡死的证据伪装成改善**，这比卡死本身更危险。
+"""
 
 
 class HonestPlayer:
@@ -146,6 +179,15 @@ class HonestPlayer:
         self._current: NpcId | None = None
         self._escort_asked = False
         self._empty_sites: set[LocationId] = set()
+        self._attitude: dict[NpcId, int] = {}
+        self._last_gift: tuple[NpcId, ItemId] | None = None
+        self._spent_gifts: set[tuple[NpcId, ItemId]] = set()
+        """「送这样东西给这个人已经不涨好感了」。
+
+        送礼有边际递减（6/3/1 然后 0），而**玩家不知道递减表**——他只能看
+        `NpcPanel.attitude`：上一次送完数字没动，就换个办法。不加这一条的话
+        基线会把 8 枚赛钱全投完，指令回合反而比递减之前更多。
+        """
 
     @classmethod
     def from_dirs(cls, scenario_dir: Path, characters_dir: Path, seed: int = 0) -> "HonestPlayer":
@@ -161,7 +203,7 @@ class HonestPlayer:
             move = self._plan(view)
             if move is not None:
                 return move
-        return QUESTION
+        return GIVE_UP
 
     def _observe(self, view: PlayerView) -> None:
         """线索是不是到手，只能从 known_facts 变多看出来。
@@ -170,6 +212,26 @@ class HonestPlayer:
         if count > self._known and self._current is not None:
             self._done.add(self._current)
         self._known = count
+        self._observe_gift_payoff(view)
+
+    def _observe_gift_payoff(self, view: PlayerView) -> None:
+        """上一回合送的礼物有没有把好感推上去。
+
+        `view` 是本回合输入**之前**的世界，所以它里面的 attitude 已经包含了
+        上一回合那次送礼的结果——拿它和送礼前记下的数字比即可。
+        """
+        for panel in view.npcs_here:
+            npc_id = NpcId(panel.npc_id)
+            before = self._attitude.get(npc_id)
+            self._attitude[npc_id] = panel.attitude
+            if (
+                self._last_gift is not None
+                and self._last_gift[0] == npc_id
+                and before is not None
+                and panel.attitude <= before
+            ):
+                self._spent_gifts.add(self._last_gift)
+        self._last_gift = None
 
     def _plan(self, view: PlayerView) -> str | None:
         here = view.location_id
@@ -188,7 +250,7 @@ class HonestPlayer:
 
         target = self._next_target()
         if target is None:
-            return QUESTION
+            return GIVE_UP
 
         goal = self.map.home_of(target)
         if here != goal:
@@ -221,23 +283,36 @@ class HonestPlayer:
         if target == NpcId("marisa"):
             for item in TRADE_ITEMS:
                 if view.inventory.get(self.map.item_name(item)):
-                    return f"/give {self.map.item_name(item)}"
+                    return self._give(target, item)
             seek = self._seek_trade_item(view)
             if seek is not None:
                 return seek
-        elif view.inventory.get(self.map.item_name(COIN)):
-            return f"/give {self.map.item_name(COIN)}"
+        elif (target, COIN) not in self._spent_gifts and view.inventory.get(
+            self.map.item_name(COIN)
+        ):
+            return self._give(target, COIN)
 
-        # 没有筹码了，只能靠嘴。问不出来就换人。
+        # 筹码用完了、或者投币已经不涨好感了，只能靠嘴。问不出来就换人。
         return self._ask(target)
 
+    def _give(self, target: NpcId, item: ItemId) -> str:
+        self._last_gift = (target, item)
+        return f"/give {self.map.item_name(item)}"
+
     def _ask(self, target: NpcId) -> str | None:
+        """第一次问主线问题，之后轮换追问。
+
+        第一句必须是主线问题：她一开口就给线索的情况下，玩家不该已经先扯了
+        五句闲话。轮换从第二次开始，也就是「她没答上来，我换个角度再问」。
+        """
         asked = self._asks.get(target, 0) + 1
         self._asks[target] = asked
         if asked > MAX_ASKS:
             self._done.add(target)
             return None
-        return QUESTION
+        if asked == 1:
+            return QUESTION
+        return SMALL_TALK[(asked - 2) % len(SMALL_TALK)]
 
     def _pickup(self, view: PlayerView) -> str | None:
         """顺手捡起魔理沙要的交易品。她的线索已经拿到就不再捡——

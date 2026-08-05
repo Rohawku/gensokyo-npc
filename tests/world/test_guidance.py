@@ -19,6 +19,19 @@ def _engine() -> WorldEngine:
     return WorldEngine(build_initial_state(defs), defs)
 
 
+def _open_reimus_gate(eng: WorldEngine) -> None:
+    """把灵梦的好感推过 16。
+
+    **不能只靠投币。** 送礼有边际递减（6/3/1 然后 0），投到底只有 10，最后
+    一截必须聊到她在意的话题（「异变」「妖怪」各 +4）。这几个测试原来写的是
+    「投四次币」——那正是被这次可玩性改动掐死的那条纯磨路径。
+    """
+    for _ in range(3):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变是从什么时候开始的？", "你觉得是妖怪干的吗？"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
+
+
 def test_no_suggestion_before_the_gate_opens() -> None:
     eng = _engine()
 
@@ -29,8 +42,7 @@ def test_suggestion_names_reveal_info_once_the_gate_opens() -> None:
     """引擎知道门槛开了，就该直说。实测让小模型自己从情报清单里推，
     命中率只有 20%；把结论直接写进 prompt 后是 100%。"""
     eng = _engine()
-    for _ in range(4):
-        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    _open_reimus_gate(eng)
 
     suggestion = eng.observe(NpcId("reimu")).suggestion
 
@@ -40,8 +52,7 @@ def test_suggestion_names_reveal_info_once_the_gate_opens() -> None:
 
 def test_suggestion_stops_once_the_fact_is_out() -> None:
     eng = _engine()
-    for _ in range(4):
-        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    _open_reimus_gate(eng)
     eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": CLUES[0]}))
 
     assert "reveal_info" not in eng.observe(NpcId("reimu")).suggestion
@@ -75,8 +86,7 @@ def test_player_objective_announces_that_she_will_talk() -> None:
     eng = _engine()
     before = eng.observe_player().objective
 
-    for _ in range(4):
-        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    _open_reimus_gate(eng)
 
     after = eng.observe_player().objective
     assert after != before

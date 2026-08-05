@@ -17,6 +17,13 @@ persona:
       - 请问还有什么需要
     quirks:
       - 提到钱或赛钱时会立刻上心
+  topics_of_interest:
+    # 她在意的东西：钱、以及作为异变解决者的本职。玩家第一次聊到就涨好感。
+    - 赛钱
+    - 异变
+    - 妖怪
+    - 结界
+    - 神社
 
 memory:
   lambda_decay: 0.08

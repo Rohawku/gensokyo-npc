@@ -11,7 +11,38 @@ ATTITUDE_MAX = 100
 ATTITUDE_DELTA: dict[str, int] = {
     "player_gave_item": 6,
     "npc_took_item": -8,
+    "topic_touched": 4,
 }
+"""好感增量。`player_gave_item` 是**首次**送出某样东西的值，见 `GIFT_ATTITUDE_STEPS`。
+
+`topic_touched` 是 4 而不是 6：聊天比送礼便宜，但不能便宜到让送礼失去意义。
+"""
+
+GIFT_ATTITUDE_STEPS: tuple[int, ...] = (6, 3, 1)
+"""**同一样东西**反复送，第 n 次的好感增量。超出长度记 0。
+
+**这是可玩性指标直接导致的改动。** 在此之前每次送礼都是 +6，于是灵梦门槛 24
+就等于「投币四次」——最优策略是敲四次 `/give` 再问一句，说话完全没有机制
+价值。实测 21 回合通关里 16 回合在敲指令、NPC 只开口 5 次，而 `topic_touched`
+（聊到她在意的话题涨好感）在真实对局里触发 **0 次**：机制写好了、有单测、
+变异验证也过了，但它在最优策略里根本用不上。
+
+递减到 0 而不是收敛到 1：留一个正的尾巴等于「刷得久总能刷够」，那还是同一个
+磨。同一样东西的上限因此是 6+3+1 = 10。
+
+**门槛必须跟着改**，否则递减会把线索变成拿不到的（那不是可玩性改善，是内容
+丢失）。灵梦从 24 降到 16：投币到底只有 10，不够；4 个话题 16，够；2 次投币
+（9）+ 2 个话题（8）= 17，够。**纯磨的路被掐死，而通关不依赖任何一条单独的
+路**——坑 #6 的红线还在。
+"""
+
+
+def gift_attitude_delta(times_given_before: int) -> int:
+    """已经送过 `times_given_before` 次同样的东西，这一次涨多少。"""
+    if times_given_before < len(GIFT_ATTITUDE_STEPS):
+        return GIFT_ATTITUDE_STEPS[times_given_before]
+    return 0
+
 
 # 情绪增量的兜底值。角色卡的 emotion.event_deltas 若给出同名条目则优先，
 # 因为同一事件对不同角色的情绪方向可能相反。

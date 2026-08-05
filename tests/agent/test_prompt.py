@@ -52,7 +52,7 @@ def test_user_prompt_includes_gate_hint_for_unrevealed_facts() -> None:
         card, eng.observe(NpcId("reimu")), [], eng.available_tools(NpcId("reimu")), []
     )[-1].content
 
-    assert "好感需达到 24" in user
+    assert "好感需达到 16" in user
 
 
 def test_user_prompt_marks_fact_as_revealable_when_gate_met() -> None:
@@ -199,8 +199,11 @@ def test_speak_prompt_forbids_quotes_and_narration() -> None:
 
 def test_decide_prompt_carries_the_engine_suggestion() -> None:
     eng = _engine()
-    for _ in range(4):
+    # 投币到底只有 10（送礼递减 6/3/1），门槛 16 的最后一截靠聊话题。
+    for _ in range(3):
         eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变是从什么时候开始的？", "你觉得是妖怪干的吗？"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
     card = eng.defs.characters[NpcId("reimu")]
 
     user = build_decide_messages(

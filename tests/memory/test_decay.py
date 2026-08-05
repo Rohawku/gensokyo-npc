@@ -148,6 +148,10 @@ def _played() -> WorldEngine:
     for _ in range(4):
         eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
         eng.tick()
+    # 送礼递减后投币只到 10，门槛 16 的最后一截靠聊话题（「结界」上面已经聊过）
+    for line in ("是妖怪干的吗", "神社最近怎么样"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
+        eng.tick()
     eng.apply(Action(actor="reimu", tool="reveal_info", args={"fact": "barrier_anomaly_time"}))
     eng.apply(Action(actor="player", tool="travel_to", args={"destination": "human_village"}))
     eng.tick()

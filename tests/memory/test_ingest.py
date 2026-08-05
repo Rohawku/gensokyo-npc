@@ -102,11 +102,14 @@ def test_nobodys_utterances_but_the_players_become_memories() -> None:
 
     eng.apply(Action(actor="reimu", tool="say", args={"text": "有事说事"}))
     eng.apply(Action(actor="marisa", tool="say", args={"text": "就是这样"}))
-    eng.apply(Action(actor="player", tool="say", args={"text": "结界怎么了"}))
+    # 刻意用一句**不含任何话题词**的玩家发言：这条测试只问「谁的话进记忆」，
+    # 而「结界」现在是灵梦的 topics_of_interest 之一，会多产生一条
+    # topic_touched，让这条测试同时测两件事。
+    eng.apply(Action(actor="player", tool="say", args={"text": "今天天气不错"}))
     _absorb(eng, store, eng.defs)
 
     assert [i.kind for i in store.items] == ["player_talked"]
-    assert "结界怎么了" in store.items[0].content
+    assert "今天天气不错" in store.items[0].content
 
 
 def test_salience_differs_by_character_for_the_same_event() -> None:
@@ -152,3 +155,19 @@ def test_unregistered_event_kinds_are_skipped_rather_than_scored_zero() -> None:
 
     assert [i.kind for i in store.items] == ["asked_player"]
     assert store.items[0].salience == SALIENCE_BASELINE["asked_player"]
+
+
+def test_a_topic_memory_belongs_only_to_the_npc_who_cares() -> None:
+    """话题事件的 actor 是那个 NPC 自己。同场的另一个 NPC 不该记住
+    「他聊到了我在意的事」——那件事不是她的。"""
+    eng = _engine()
+    reimu_store, marisa_store = _store("reimu"), _store("marisa")
+    eng.state.npcs[NpcId("marisa")].location = eng.state.npcs[NpcId("reimu")].location
+
+    # 「赛钱」是灵梦的话题、不是魔理沙的。
+    eng.apply(Action(actor="player", tool="say", args={"text": "赛钱箱空着啊"}))
+    _absorb(eng, reimu_store, eng.defs)
+    _absorb(eng, marisa_store, eng.defs)
+
+    assert "topic_touched" in [i.kind for i in reimu_store.items]
+    assert "topic_touched" not in [i.kind for i in marisa_store.items]
