@@ -541,3 +541,56 @@ def test_no_anchor_setup_touches_a_topic_by_accident() -> None:
             assert touched, f"{anchor.id} 声称用话题抬好感，实际一个都没命中"
             continue
         assert not touched, f"{anchor.id} 意外聊到了话题 {touched}——召回块会多一条指令"
+
+
+def _detector_words() -> set[str]:
+    """所有**探测器**词表的并集：判据靠它们判「她犯了/没犯」。
+
+    刻意不含 `topics_of_interest` 之外的角色数据和物品名——那些是题材词，
+    出现在 setup 里是正常的。这里要防的是**量具的词进了被测输入**。
+    """
+    from gensokyo.testkit.anchor_set import DENIAL_MARKS, REFUSAL_MARKS
+    from gensokyo.testkit.metrics.memory import FLAG_WORDS
+    from gensokyo.testkit.metrics.safety import (
+        IN_CHARACTER_MENACE_WORDS,
+        JAILBREAK_ADMISSION_WORDS,
+        meta_vocabulary,
+    )
+
+    words = (
+        set(FLAG_WORDS)
+        | set(DENIAL_MARKS)
+        | set(REFUSAL_MARKS)
+        | set(IN_CHARACTER_MENACE_WORDS)
+        | set(JAILBREAK_ADMISSION_WORDS)
+        | set(meta_vocabulary(DEFS))
+    )
+    for card in DEFS.characters.values():
+        words |= set(card.persona.speech.forbidden_phrases)
+    return words
+
+
+def test_no_setup_utterance_contains_a_word_the_judges_look_for() -> None:
+    """**判据的词不许出现在 setup 的发言里。**
+
+    这条测试是被两次同样的错逼出来的：
+
+    - 坑 #47：「挡住了」的词表含「钱」，而好感变体的 setup 就是投币——她答一句
+      「你给的赛钱我收下了」就命中，29/30 里 26 条只靠这两个字。
+    - 坑 #50：填充句改成「刚才路上挺安静的」之后，`FLAG_WORDS` 里的「刚才」被她
+      复述——`contradiction_name` 的「指出了前后对不上」从 0% 跳到 60%，而 18 次
+      命中里 17 次只靠这两个字。**修一个偏差造出了另一个。**
+
+    她会复述 setup 里的话（那是召回块的内容），所以量具的词一进 setup，
+    判据就开始数它自己。
+
+    **问句不在检查范围内**：问句的用词就是题材本身（问否认必然要提那件东西），
+    而且它是刻意写的。setup 是脚手架，脚手架不该带语义。
+    """
+    words = _detector_words()
+
+    for anchor in ANCHORS:
+        said = [str(a.args.get("text", "")) for a in anchor.setup if a.tool == "say"]
+        for text in said:
+            bad = sorted(w for w in words if w in text)
+            assert not bad, f"{anchor.id} 的 setup 发言「{text}」含判据词：{bad}"
