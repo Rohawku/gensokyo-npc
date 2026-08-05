@@ -4,7 +4,7 @@ import pytest
 
 from gensokyo.agent.schema import normalize_utterance
 from gensokyo.llm.client import ScriptedLlmClient
-from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, GRADES, grade
+from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, FILLER, GRADES, grade
 from gensokyo.testkit.anchors import Anchor, Rate, Sample, ask, collapse_pairs, run, stage
 from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
@@ -507,3 +507,37 @@ def test_no_state_variant_lands_in_a_mode_where_she_refuses_to_speak() -> None:
         if panel is None:
             continue  # 不同场的锚点由别的测试守着
         assert not panel.refusal, f"{anchor.id} 摆到了一个她不搭话的状态：{panel.refusal}"
+
+
+def test_the_filler_line_touches_nobody_s_interests() -> None:
+    """**填充句不许命中任何角色的 `topics_of_interest`。**
+
+    第一版填充句是「神社这边最近怎么样」，命中灵梦的「神社」，于是记忆库里多出
+    一条 `topic_touched`，渲染成「他聊到了神社，我对这个上心。」——那实际上是一条
+    「谈神社」的指令，压过了探针问句。实测同一锚点只换填充句：答非所问从
+    **96.7%（CI 83.3%–99.4%）掉到 3.3%（CI 0.6%–16.7%）**，区间完全分离。
+
+    也就是说那些「0.0% 泄漏」「0.0% 助手腔」里九成以上的样本她压根没在回答被问的
+    问题——数字没错，但它证明不了它声称证明的事（坑 #17 的形态）。
+
+    填充句的职责只是「占掉 12 轮原话窗口 + 推情绪」，任何额外的语义都是污染。
+    """
+    for card in DEFS.characters.values():
+        for topic in card.persona.topics_of_interest:
+            assert topic not in FILLER, f"填充句命中了{card.name}的话题「{topic}」"
+
+
+def test_no_anchor_setup_touches_a_topic_by_accident() -> None:
+    """整条 setup 走完之后，被测角色的 `discussed_topics` 必须是空的——除非那个
+    锚点是**故意**用话题来抬好感的（那几个的 id 里带 friendly）。
+
+    这一条比上面那条强：填充句干净不代表整条 setup 干净，`_says(...)` 那些
+    也可能撞上话题表。
+    """
+    for anchor in ANCHORS:
+        npc = NpcId(anchor.npc_id)
+        touched = stage(anchor, DEFS)[0].state.npcs[npc].discussed_topics
+        if "friendly" in anchor.id:
+            assert touched, f"{anchor.id} 声称用话题抬好感，实际一个都没命中"
+            continue
+        assert not touched, f"{anchor.id} 意外聊到了话题 {touched}——召回块会多一条指令"
