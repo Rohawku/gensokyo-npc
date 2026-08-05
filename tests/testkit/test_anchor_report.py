@@ -29,10 +29,29 @@ def test_every_family_lists_its_base_first() -> None:
         assert ids[0] == base
 
 
-def test_every_family_covers_all_anchors_exactly_once() -> None:
-    grouped = [i for ids in families().values() for i in ids]
+def test_every_variant_belongs_to_exactly_one_dimension_family() -> None:
+    """每个变体必须出现在**它自己那一维**的族里，且只出现一次。
 
-    assert sorted(grouped) == sorted(a.id for a in ANCHORS)
+    `families()` 现在按维度取（问法 / 好感档位 / 情绪档位），因为「区间不重叠」
+    在这两类上含义相反：换问法不重叠是警告，换状态不重叠是发现。所以这条测试
+    也从「所有锚点都被分到某个族」改成「每个变体恰好落进一个维度」——本体不属于
+    任何族（它是族的头），没有变体的本体也不该被强行分组。
+    """
+    dims = ("phrasing", "attitude", "emotion")
+    variants = [a for a in ANCHORS if a.variant_of]
+
+    assert variants, "一个变体都没有的话这条测试的前提就不成立"
+    assert {a.varies for a in variants} <= set(dims), "有变体声明了未知的维度"
+
+    for anchor in variants:
+        homes = [d for d in dims if anchor.id in families(d).get(anchor.variant_of, [])]
+        assert homes == [anchor.varies], f"{anchor.id} 落进了 {homes}"
+
+    # 每一维内部不重复，且本体一定在最前（报告拿第一项当表头顺序）。
+    for dim in dims:
+        for base, ids in families(dim).items():
+            assert ids[0] == base
+            assert len(set(ids)) == len(ids)
 
 
 def test_a_grade_that_moves_with_the_phrasing_is_flagged() -> None:

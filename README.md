@@ -271,7 +271,7 @@ make test
 要模型的三条命令，成本从低到高：
 
 ```bash
-make anchors     # 锚点探针：固定状态 + 单次提问 + 独立采样，约 10 分钟
+make anchors     # 锚点探针：29 个固定场景 × 30 次独立采样
 make eval        # 三种人格各 2 局，出五维指标报告
 make harvest     # 重放轨迹 + 同 prompt 重采样，造 DPO 偏好对（先跑过 eval）
 ```

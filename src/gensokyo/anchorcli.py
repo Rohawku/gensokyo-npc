@@ -63,6 +63,66 @@ def _phrasing_section(samples: list[Sample], ran: set[str]) -> list[str]:
     return lines
 
 
+STATE_DIMS: dict[str, str] = {"attitude": "好感档位", "emotion": "情绪档位"}
+
+
+def _state_section(samples: list[Sample], ran: set[str]) -> list[str]:
+    """同一个问题、同一套判据，只换她的状态。
+
+    **和「换一种问法」那一节的读法正好相反。** 那一节里区间不重叠是警告——
+    同一个状态两种说法给出两个数，那个数就是问法的性质。这一节里区间不重叠是
+    **发现**：她在好感 0 和好感 18 下表现不同本来就该如此，要警觉的是「引用那个
+    数字时没说它属于哪个状态」。反过来，重叠才是「这个数字可以裸引用」的证据。
+
+    合成一节报的话，每一条真实的状态依赖都会被标成「这个指标不可靠」。
+    """
+    lines = [
+        "## 换一个状态",
+        "",
+        "同一个问题、同一套判据，只换好感或情绪。**这一节里「区间不重叠」是发现，"
+        "不是警告**——她在不同状态下本来就该不一样。要防的是**引用一个数字时"
+        "不说它属于哪个状态**：`helpful_bait` 的助手腔 0.0% 是在好感 0、烦躁度 0.10 "
+        "下测的，它不自动等于「这个角色不会说助手腔」。",
+        "",
+        "⚠️ 反过来才是问题：**区间重叠**说明这个数字对状态不敏感，那才是可以裸引用的。",
+        "",
+    ]
+    state_bound: list[str] = []
+    for dim, title in STATE_DIMS.items():
+        groups = {
+            b: [i for i in ids if i in ran and grade(samples, i)]
+            for b, ids in families(dim).items()
+        }
+        groups = {b: ids for b, ids in groups.items() if len(ids) >= 2}
+        if not groups:
+            continue
+        lines += [f"### 换{title}", ""]
+        for base, present in sorted(groups.items()):
+            graded = {i: grade(samples, i) for i in present}
+            lines += [f"**{base}**", "", "| 档位 | " + " | ".join(present) + " |"]
+            lines.append("|" + "---|" * (len(present) + 1))
+            for label in graded[base]:
+                rates = [graded[i][label] for i in present]
+                split = any(a.separated_from(b) for a in rates for b in rates)
+                mark = " 📌" if split else ""
+                lines.append(f"| {label}{mark} | " + " | ".join(str(r) for r in rates) + " |")
+                if split:
+                    state_bound.append(f"{base} · {label}（随{title}变化）")
+            lines += ["", *(f"- `{i}`：{BY_ID[i].note.splitlines()[0]}" for i in present), ""]
+
+    if state_bound:
+        lines += [
+            "**这些档位随状态变化，引用时必须带上状态**：" + "、".join(state_bound) + "。",
+            "",
+        ]
+    else:
+        lines += [
+            "所有档位在各个状态下区间都重叠——这些数字对好感与情绪不敏感，可以按「她的性质」读。",
+            "",
+        ]
+    return lines
+
+
 def _collapse_section(samples: list[Sample]) -> list[str]:
     """跨锚点塌缩：**问两个不同问题，她给出同一句话的概率。**
 
@@ -119,7 +179,9 @@ def main() -> None:
         lines.append("")
         print()
 
-    lines += _phrasing_section(result.samples, {a.id for a in wanted})
+    ran = {a.id for a in wanted}
+    lines += _phrasing_section(result.samples, ran)
+    lines += _state_section(result.samples, ran)
     lines += _collapse_section(result.samples)
 
     args.out.mkdir(parents=True, exist_ok=True)

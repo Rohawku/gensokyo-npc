@@ -379,16 +379,29 @@ def test_a_variant_reuses_the_graders_of_the_anchor_it_rephrases() -> None:
         assert list(grade([], anchor.id)) == list(grade([], anchor.variant_of)), anchor.id
 
 
-def test_a_variant_asks_the_same_npc_a_genuinely_different_question() -> None:
-    """同一个角色（否则比的是两个人），但问法必须真的不同（否则它只是把
-    n 从 30 变成 60，测不到问法敏感性）。"""
+def test_a_variant_changes_exactly_one_thing() -> None:
+    """**一个变体只许改一个维度。** 同时改问法和状态的话，区间不重叠时你不知道
+    是谁造成的——而这一族存在的全部意义就是把这两件事分开归因。
+
+    - `phrasing`：状态相同（`setup` 逐个动作一致），问句必须不同。否则它只是
+      把 n 从 30 变成 60，测不到问法敏感性。
+    - `attitude` / `emotion`：问句相同，`setup` 必须不同。问句一变，就分不清
+      「她在高好感下更爱顺着编」和「这个问法更容易套出话」。
+
+    角色一律相同——不然比的是两个人。
+    """
     for anchor in ANCHORS:
         if not anchor.variant_of:
             continue
         base = BY_ID[anchor.variant_of]
 
         assert anchor.npc_id == base.npc_id, anchor.id
-        assert anchor.question != base.question, anchor.id
+        if anchor.varies == "phrasing":
+            assert anchor.question != base.question, anchor.id
+            assert anchor.setup == base.setup, f"{anchor.id} 同时改了问法和状态"
+        else:
+            assert anchor.question == base.question, f"{anchor.id} 同时改了状态和问法"
+            assert anchor.setup != base.setup, anchor.id
 
 
 def test_a_variant_is_not_itself_a_variant_target() -> None:
@@ -442,3 +455,47 @@ def test_the_filler_lines_in_the_contradiction_anchor_are_all_distinct() -> None
     texts = [a.args["text"] for a in anchor.setup]
 
     assert len(texts) == len(set(texts))
+
+
+def test_every_state_variant_really_reaches_the_state_it_claims() -> None:
+    """**摆出来的状态必须真的和本体不同。**
+
+    这是坑 #17 的形态：锚点的前提不成立，而报告照旧印一个数。`contradiction_name`
+    第一版就是这样——问句太弱，30 次采样里她一次都没回应名字这件事，而报告印着
+    0.0%，读起来像「她认不出矛盾」。
+
+    状态变体的前提是「她确实处在另一个档位」。`setup` 动作看起来不同不等于状态
+    真的不同（比如给了礼物又被她拿回去，好感可能回到原点），所以这里把两边都
+    摆出来比数值。
+    """
+    for anchor in ANCHORS:
+        if anchor.varies not in ("attitude", "emotion"):
+            continue
+        base = BY_ID[anchor.variant_of]
+        npc = NpcId(anchor.npc_id)
+        here = stage(anchor, DEFS)[0].state.npcs[npc]
+        there = stage(base, DEFS)[0].state.npcs[npc]
+
+        if anchor.varies == "attitude":
+            assert here.attitude != there.attitude, f"{anchor.id} 的好感和本体一样"
+        else:
+            assert here.emotion != there.emotion, f"{anchor.id} 的情绪和本体一样"
+
+
+def test_no_state_variant_lands_in_a_mode_where_she_refuses_to_speak() -> None:
+    """**她不搭话的状态不能建锚点。**
+
+    灵梦的 `irritated` 声明了 `refusal`，`Session.say` 会整个跳过她——也就是说
+    那个状态在真实玩法里**永远不产生台词**。给它建锚点等于测一个不存在的分布，
+    而报告会印一个看起来正常的比率。
+
+    这条测试也是情绪这一维只能在芙兰身上测完整的原因：她的 `destructive` 没有
+    声明 refusal。
+    """
+    for anchor in ANCHORS:
+        engine = stage(anchor, DEFS)[0]
+        panels = {p.npc_id: p for p in engine.observe_player().npcs_here}
+        panel = panels.get(NpcId(anchor.npc_id))
+        if panel is None:
+            continue  # 不同场的锚点由别的测试守着
+        assert not panel.refusal, f"{anchor.id} 摆到了一个她不搭话的状态：{panel.refusal}"
