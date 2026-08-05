@@ -91,3 +91,32 @@ def test_every_pitfall_has_a_takeaway_or_belongs_to_a_class() -> None:
     missing = [chunks[i] for i in range(0, len(chunks), 2) if "教训" not in chunks[i + 1]]
 
     assert missing == [], f"这些坑没写教训：{missing}"
+
+
+def test_every_cross_reference_points_at_something_that_exists() -> None:
+    """日志里的「见二·十」「坑 #37」「取舍 #11」必须都指向真实存在的东西。
+
+    **这条是为一次悬空引用补的**：写坑 #48 时我引用了「见二·十一」，而那一节
+    根本不存在——文档指向一个不存在的小节，和架构图里写着一个不存在的目录是
+    同一类问题（读者按它去找，找不到，然后不再信这份文档）。
+
+    判据从文档自身抽，不硬编码任何编号。
+    """
+    text = _text()
+    pitfalls = {m.group(1) for m in _PITFALL_HEADING.finditer(text)}
+    tradeoffs = {m.group(1) for m in _TRADEOFF_HEADING.finditer(text)}
+    sections = {
+        m.group(1) for m in re.finditer(r"^## (二·[一二三四五六七八九十]+)、", text, re.MULTILINE)
+    }
+
+    assert pitfalls and tradeoffs and sections, "抽不到标题的话这条测试的前提不成立"
+
+    missing_pits = {m.group(1) for m in re.finditer(r"坑 #(\d+)", text)} - pitfalls
+    missing_offs = {m.group(1) for m in re.finditer(r"取舍 #(\d+)", text)} - tradeoffs
+    missing_secs = {
+        m.group(1) for m in re.finditer(r"见(二·[一二三四五六七八九十]+)", text)
+    } - sections
+
+    assert missing_pits == set(), f"引用了不存在的坑：{sorted(missing_pits, key=int)}"
+    assert missing_offs == set(), f"引用了不存在的取舍：{sorted(missing_offs, key=int)}"
+    assert missing_secs == set(), f"引用了不存在的小节：{sorted(missing_secs)}"
