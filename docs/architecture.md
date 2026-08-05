@@ -65,7 +65,13 @@
 
 ## 2. 目录结构
 
-标 `（W2）` 的条目**尚未实现**，属 W2 及之后的规划；未标记的即当前仓库里真实存在的文件。
+标 `（未实现）` 的条目是规划，其余是仓库里真实存在的文件。
+
+**这一节曾经骗过人。** 原先整棵 `testkit/` 标着「尚未实现」，而它早就实现了——
+只是文件名和这里写的一个都对不上（`player_sim.py` 实际叫 `personas.py`，
+`probes.py` 已经退役）。一个「说了不存在的东西」的目录树和一个「说某个已存在的
+东西不存在」的目录树是同一类问题：**读者按它去找文件，找不到，然后不再信这份文档**。
+偏离规划的地方一律注明原因，不悄悄改名字。
 
 ```
 gensokyo-npc/
@@ -73,7 +79,7 @@ gensokyo-npc/
 ├── LICENSE                      # 代码 MIT
 ├── NOTICE.md                    # 东方二创声明（遵循上海爱丽丝幻乐团准则）
 ├── pyproject.toml               # uv / hatch，依赖与工具配置
-├── docker-compose.yml           # postgres + pgvector 一键起（W2）
+├── docker-compose.yml           # postgres + pgvector 一键起（未实现，见 memory/ 的说明）
 ├── .env.example
 ├── Makefile                     # make dev / make test / make play
 │
@@ -89,41 +95,62 @@ gensokyo-npc/
 │   │   └── loader.py            # 从 scenario/ 与 characters/ 载入定义
 │   │
 │   ├── memory/
-│   │   ├── models.py            # MemoryItem / MemoryTier（W2）
-│   │   ├── store.py             # MemoryStore Protocol + Postgres/InMemory 实现（W2）
-│   │   ├── writer.py            # Event → MemoryItem，salience 计算（W2）
-│   │   ├── retriever.py         # 四路信号融合检索（W2）
-│   │   ├── decay.py             # 三级降级（活跃/压缩/沉睡）（W2）
-│   │   └── reflect.py           # Semantic 层归纳（W2）
+│   │   ├── item.py              # MemoryItem / Tier（规划里叫 models.py）
+│   │   ├── ingest.py            # Event → MemoryItem（规划里叫 writer.py）
+│   │   ├── salience.py          # 显著度：静态基线 × 角色乘数
+│   │   ├── retrieve.py          # 四路信号融合检索
+│   │   ├── similarity.py        # 语义相似（唯一可替换的一路，见取舍 #10）
+│   │   ├── decay.py             # 三级降级（活跃/压缩/沉睡）
+│   │   ├── query.py             # 检索查询与 focus 组装
+│   │   ├── render.py            # 召回条目 → 进 prompt 的散文（压缩层是渲染，取舍 #9）
+│   │   └── pipeline.py          # absorb / rebuild：实时与读档共用同一条码路
+│   │   # store.py 没有：记忆是动作日志的推导产物（取舍 #2），不需要独立持久层。
+│   │   # reflect.py 未实现：它需要一条衡量归纳质量的指标，而现有指标衡量的是召回。
 │   │
 │   ├── agent/
 │   │   ├── schema.py            # NpcTurn 输出契约
-│   │   ├── persona.py           # 角色卡载入与 prompt 片段渲染（W2）
 │   │   ├── prompt.py            # prompt 组装（模板在 prompts/）
-│   │   ├── policy.py            # ReAct 循环、工具调用、失败自愈
+│   │   ├── policy.py            # 两阶段回合（决策 / 说话）、工具调用、失败自愈
 │   │   └── npc.py               # NpcAgent：编排 persona/memory/state/policy
+│   │   # persona.py 没有：角色卡由 world/loader.py 载入，prompt 片段在 prompt.py 渲染。
 │   │
 │   ├── llm/
-│   │   ├── client.py            # 统一接口（OpenAI 兼容：vLLM 本地 / 远程 API）
-│   │   ├── embedding.py         # 向量化（W2）
-│   │   └── replay.py            # 录制/回放，供测试用（W2）
+│   │   └── client.py            # 统一接口（OpenAI 兼容）+ 脚本化客户端（测试用）
+│   │   # embedding.py 未实现：相似度目前是字符 bigram 余弦（取舍 #10）。
+│   │   # replay.py 没有：测试用 ScriptedLlmClient，回放靠动作日志。
 │   │
 │   ├── session/
-│   │   ├── loop.py              # 一个回合的编排
-│   │   ├── save.py              # 存档/读档 = event_log 序列化
-│   │   └── view.py              # 构造玩家视图（右栏面板数据）（W2）
+│   │   ├── loop.py              # Session：一个回合的编排、指令、主动开口
+│   │   ├── commands.py          # 斜杠指令别名（CLI 与玩家模拟器共用）
+│   │   └── save.py              # 存档/读档 = **动作日志**序列化（不是 event_log）
+│   │   # view.py 没有：玩家视图由 world/observation.py 的 PlayerView 承担。
 │   │
-│   ├── testkit/                 # （W2）
-│   │   ├── player_sim.py        # 四种玩家人格
-│   │   ├── probes.py            # 从 event_log 自动生成记忆探针
+│   ├── testkit/
+│   │   ├── personas.py          # 五种玩家人格（规划里叫 player_sim.py）
+│   │   ├── runner.py            # 跑一局产出 Trajectory
+│   │   ├── trajectory.py        # 轨迹与回合记录（指标的唯一数据源）
+│   │   ├── anchors.py           # 锚点探针内核：摆状态、采样、Wilson 区间
+│   │   ├── anchor_set.py        # 29 个锚点场景与分档判据
+│   │   ├── judge.py             # LLM-as-Judge 任务构造（盲化 + 双向交换）
 │   │   ├── metrics/
-│   │   │   ├── hard.py          # 任务完成、工具调用、info_leak
+│   │   │   ├── hard.py          # 任务完成、工具调用
 │   │   │   ├── persona.py       # 助手腔污染、行为分布偏离、越界知识
-│   │   │   └── judge.py         # LLM 判分（去偏 + κ 准入门槛）
-│   │   ├── anchors/             # 60 个 anchor 场景（YAML）
+│   │   │   ├── safety.py        # info_leak、元层泄漏、越狱、角色内危险表达
+│   │   │   ├── memory.py        # 召回、幻觉、敷衍、反问占比
+│   │   │   ├── playability.py   # 这游戏是不是一个对话游戏
+│   │   │   └── agreement.py     # Cohen's κ、准入门槛、锚定偏差
 │   │   └── report.py            # 生成回归报告
+│   │   # probes.py 已退役：整局探针的问句自带答案，判据分不出反问和真召回（坑 #30）。
+│   │   # anchors/ 不是 YAML 目录：场景仍写在 anchor_set.py 里，因为分档判据是函数。
+│   │   #   数量也不是 60，理由逐格记在工程日志二·十——铺满会得到一张大部分格子
+│   │   #   必须留空的表，而每一格都要花 30 次真实采样去回答一个已知答案的问题。
 │   │
-│   └── web/                     # （W2）
+│   ├── training/                # 偏好数据采集（DPO 前置）
+│   │   ├── harvest.py           # 重放原局 + 同 prompt 重采样 + 配对
+│   │   ├── label.py             # 硬判据自动打标
+│   │   └── preference.py        # Dataset / 配额与缺口
+│   │
+│   └── web/                     # （未实现）
 │       ├── server.py            # FastAPI：SSE 流式对话 + 状态面板
 │       ├── templates/           # Jinja2
 │       └── static/              # HTMX + CSS
@@ -136,23 +163,33 @@ gensokyo-npc/
 │   ├── locations.yaml
 │   ├── items.yaml
 │   ├── facts.yaml
-│   └── quest.yaml               # （W2）阶段推导目前写在 world/quest.py 里
+│   ├── stages.yaml              # 阶段的 hint 与玩家目标文案
+│   ├── endings.yaml
+│   └── prologue.yaml
+│   # quest.yaml 没有：阶段**推导规则**是代码（world/quest.py），只有文案进 YAML。
 ├── prompts/                     # prompt 模板，与代码分离便于迭代
-│   ├── npc_system.jinja         # （W2）系统提示目前在 agent/prompt.py 里拼
-│   ├── npc_turn.jinja
-│   ├── reflect.jinja            # （W2）
-│   └── judge_*.jinja            # （W2）
+│   ├── npc_decide.jinja         # 决策阶段（短 JSON）
+│   └── npc_speak.jinja          # 说话阶段（流式散文）
+│   # 规划里的 npc_turn.jinja 拆成了上面两个（取舍 #3：一次调用没法边生成边展示）。
+│   # npc_system.jinja 没有：系统提示由角色卡数据拼装，不需要模板。
+│   # reflect.jinja / judge_*.jinja 未实现（reflection 未做；judge 的 prompt 在
+│   #   testkit/judge.py 里，因为它要按对子动态盲化）。
 │
-├── tests/
-│   ├── world/                   # 纯单测，无 LLM，秒级
-│   ├── memory/                  # stub embedding，无 LLM（W2）
-│   ├── agent/                   # LLM 回放测试
-│   └── e2e/                     # player_sim 驱动（W2）
+├── tests/                       # 647 条，全部无 LLM（脚本化客户端）
+│   ├── world/                   # 确定性内核
+│   ├── memory/                  # 分层记忆与读档一致性
+│   ├── agent/                   # prompt 组装、两阶段策略、Session
+│   ├── testkit/                 # 人格、runner、指标、锚点、judge
+│   ├── training/                # 偏好数据采集
+│   └── test_engineering_log.py  # 工程日志自身的一致性（编号、归类、条数）
+│   # e2e/ 没有单独一层：整局回放测试在 testkit/test_baseline_run.py 里，
+│   #   它跑完整的一局通关流程，NPC 侧脚本化，毫秒级、能进 CI。
 │
 └── docs/
     ├── design.md                # 设计与玩法（配套文档）
     ├── architecture.md          # 本文
-    └── screenshots/             # （W2）
+    ├── engineering-log.md       # 踩过的坑与刻意的取舍（面试里最该看的一份）
+    └── screenshots/            # （空）
 ```
 
 **为什么 `characters/` 和 `scenario/` 在 `src/` 外面**：它们是内容不是代码。调平衡、加第四个 NPC、改剧情，都不应该碰 Python 文件。这条边界一旦模糊，后面每次调角色都会变成改代码，很快就没人敢动了。
