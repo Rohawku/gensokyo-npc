@@ -1,11 +1,16 @@
 """锚点报告两个横向小节的测试。
 
-这两节都在回答「单个锚点的表里看不见的问题」：
+这三节都在回答「单个锚点的表里看不见的问题」：
 - 换一种问法：这个比率是她的性质，还是问法的性质（坑 #30 的推广）
+- 换一个状态：这个比率是她的性质，还是那个状态的性质
 - 跨锚点塌缩：不同问题会不会塌成同一句（坑 #27 的形态）
+
+**前两节的读法相反**，所以它们各有一套断言：问法那节里「区间不重叠」是警告
+（⚠️，不能单独引用），状态那节里是发现（📌，引用时必须带状态）。写反了报告
+会把每一条真实的状态依赖都标成一次指标失效。
 """
 
-from gensokyo.anchorcli import _collapse_section, _phrasing_section
+from gensokyo.anchorcli import _collapse_section, _phrasing_section, _state_section
 from gensokyo.testkit.anchor_set import ANCHORS, families
 from gensokyo.testkit.anchors import Sample
 
@@ -114,3 +119,61 @@ def test_collapse_lists_the_pair_that_gave_the_same_line() -> None:
 
     assert "jailbreak_meta × recall_gift_count" in text
     assert "100.0%" in text
+
+
+# ----------------------------------------------------------------- 换一个状态
+
+STATE_FAMILY = "helpful_bait"
+FRIENDLY = f"{STATE_FAMILY}_friendly"
+EDGY = f"{STATE_FAMILY}_edgy"
+SERVILE = "当然可以，我来帮您规划一条路线。"
+CURT = "自己看地图去。"
+
+
+def test_a_grade_that_moves_with_the_state_is_marked_as_a_finding() -> None:
+    """**这一节存在的理由，也是它和问法那节唯一的区别。**
+
+    同一个问题、同一套判据，只把她的好感从 0 换到 18，助手腔就从 0% 变成 100%
+    ——那不是指标坏了，那是「助手腔 0.0%」这个结论只在低好感下成立。所以标记是
+    📌（引用时带上状态）而不是 ⚠️（不可靠）。
+    """
+    samples = _samples(STATE_FAMILY, CURT) + _samples(FRIENDLY, SERVILE)
+
+    text = "\n".join(_state_section(samples, {STATE_FAMILY, FRIENDLY}))
+
+    assert "📌" in text
+    assert "引用时必须带上状态" in text
+    assert "⚠️ 反过来才是问题" in text  # 重叠才是可以裸引用的证据
+
+
+def test_grades_that_hold_across_states_are_reported_as_safe_to_quote() -> None:
+    """两个状态下都是 0%——**这才是「这个数字可以裸引用」的证据**。
+    问法那节的结论方向和这里相反，所以两节的收尾文案也必须不同。"""
+    samples = _samples(STATE_FAMILY, CURT) + _samples(FRIENDLY, CURT)
+
+    text = "\n".join(_state_section(samples, {STATE_FAMILY, FRIENDLY}))
+
+    assert "📌" not in text
+    assert "可以按" in text and "她的性质" in text
+
+
+def test_the_two_state_dimensions_are_reported_separately() -> None:
+    """好感和情绪分开成两小节。合在一起的话，「随好感变化」和「随情绪变化」
+    会被读成同一个结论，而它们要的应对完全不同（一个是关系，一个是被缠的程度）。"""
+    samples = _samples(STATE_FAMILY, CURT) + _samples(FRIENDLY, SERVILE) + _samples(EDGY, CURT)
+
+    text = "\n".join(_state_section(samples, {STATE_FAMILY, FRIENDLY, EDGY}))
+
+    assert "### 换好感档位" in text
+    assert "### 换情绪档位" in text
+    # 同一个本体在两小节里各出现一次，各自只和本维度的变体比。
+    assert text.count(f"**{STATE_FAMILY}**") == 2
+
+
+def test_a_state_family_with_only_the_base_run_is_skipped() -> None:
+    """只跑了本体没跑变体时不该印一张单列表——那张表回答不了任何问题。"""
+    samples = _samples(STATE_FAMILY, CURT)
+
+    text = "\n".join(_state_section(samples, {STATE_FAMILY}))
+
+    assert f"**{STATE_FAMILY}**" not in text
