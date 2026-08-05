@@ -25,6 +25,7 @@ from gensokyo.testkit.metrics.persona import (
     persona_library_sizes,
     persona_metrics,
 )
+from gensokyo.testkit.metrics.playability import PlayabilityMetrics, playability_metrics
 from gensokyo.testkit.metrics.safety import (
     SafetyMetrics,
     library_sizes,
@@ -93,6 +94,7 @@ class EvalReport(BaseModel):
     safety: SafetyMetrics
     persona: PersonaMetrics
     memory: MemoryMetrics
+    playability: PlayabilityMetrics
     total_llm_calls: int
     total_persona_llm_calls: int
     mean_latency_ms: float
@@ -116,6 +118,7 @@ class EvalReport(BaseModel):
                 *_header(self),
                 *_hard_section(self),
                 *_memory_section(self),
+                *_playability_section(self),
                 *_approximate_section(self),
                 *_provenance_section(self),
             ]
@@ -332,6 +335,45 @@ def _memory_section(report: EvalReport) -> list[str]:
     return lines
 
 
+def _playability_section(report: EvalReport) -> list[str]:
+    """可玩性：这游戏玩起来是不是一个对话游戏。
+
+    **只统计「来通关的」人格。** 越狱玩家只说话不做事，对话占比接近 1，混进来
+    会把问题盖掉（坑 #18 的形态）。
+    """
+    p = report.playability
+    if not p.episodes:
+        return [
+            "### 可玩性",
+            "",
+            "> 这一批没有「来通关的」人格（honest / smooth_talker），所以可玩性",
+            "> 指标的分母是 0。越狱与探针人格不计入——他们不做事，只说话。",
+            "",
+        ]
+    return [
+        "### 可玩性（硬计数）",
+        "",
+        "**通关率不衡量好不好玩。** 这一组回答的是「玩家的回合花在哪儿」——"
+        "一个 LLM 驱动的对话游戏，如果大部分回合是敲指令，那 LLM 基本没被用到。",
+        "",
+        "| 指标 | 值 | 分母 |",
+        "|---|---|---|",
+        f"| **对话回合占比** | {_pct(p.dialogue_share)} | {p.turns} 个回合 |",
+        f"| **敲几次指令才听她说一句话** | {_num(p.commands_per_utterance)} | "
+        f"{p.command_turns} 指令 / {p.npc_utterances} 句台词 |",
+        f"| 每局 NPC 开口次数 | {_num(p.utterances_per_episode)} | {p.episodes} 局 |",
+        f"| 说了话却没人回应的回合 | {p.silent_dialogue_turns} | {p.dialogue_turns} 个对话回合 |",
+        "",
+        f"指令构成：{_histogram(p.command_histogram)}",
+        f"　　NPC 出场：{_histogram(p.utterances_by_npc)}",
+        "",
+        "**指令构成里重复的那一部分值得单看**：好感只有「给东西」这一个来源，"
+        "而门槛要求重复投币，于是玩家在做的事是凑数值而不是对话。",
+        "**NPC 出场按角色拆**是因为聚合值会掩盖「某个 NPC 几乎不出场」。",
+        "",
+    ]
+
+
 def _approximate_section(report: EvalReport) -> list[str]:
     safety = report.safety
     persona = report.persona
@@ -458,6 +500,7 @@ def evaluate(trajectories: Sequence[Trajectory], defs: WorldDefs) -> EvalReport:
         safety=safety_metrics(trajectories, defs),
         persona=persona_metrics(trajectories, defs),
         memory=memory_metrics(trajectories, defs),
+        playability=playability_metrics(trajectories),
         total_llm_calls=sum(t.llm_calls for traj in trajectories for t in traj.turns),
         total_persona_llm_calls=sum(
             t.persona_llm_calls for traj in trajectories for t in traj.turns
