@@ -814,7 +814,49 @@ class WorldEngine:
             if finishers and self.state.player.location == ANOMALY_SITE:
                 return f"{'、'.join(finishers)}就在这儿——让她动手。"
 
+        stalled = [
+            self.defs.characters[nid].name for nid in self._npcs_here() if self._stalled(nid)
+        ]
+        if stalled:
+            return f"再送东西对{'、'.join(stalled)}已经不涨好感了——聊点她在意的事试试。"
+
         return base
+
+    def _stalled(self, npc_id: NpcId) -> bool:
+        """她的门槛还差一截，而玩家手上的东西送出去已经一个点都不涨了。
+
+        **这一格是送礼边际递减（`GIFT_ATTITUDE_STEPS`）逼出来的。** 递减之前
+        「投币投到数值够」是可行的，玩家只要一直投；递减之后同一样东西投到底
+        只有 10 分而灵梦的门槛是 16，**而玩家没有任何信息知道该改聊天**——
+        `HonestPlayer` 能过是因为我给它写了「看 attitude 有没有动」的逻辑，
+        真人玩家眼里只是「投了八枚币，什么也没发生」。这是那次改动引入的死路。
+
+        引擎知道 `gift_counts` 也知道递减表，所以按项目一贯的判据直接说：
+        **陈述事实不够，得说该做什么**（坑 #2 那条方法论的最终形态）。
+        刻意不报出话题词表——那会把对话变成猜关键词。她在意什么从人设看得出来：
+        巫女在意异变和赛钱，被关了 495 年的孩子在意外面。
+        """
+        if self._will_talk(npc_id):
+            return False
+        gate = self._attitude_gate(npc_id)
+        if gate is None:
+            # 门槛不是好感（魔理沙只认交易），提示聊天会把玩家带错方向。
+            return False
+        holding = [item for item, n in self.state.player.inventory.items() if n > 0]
+        if not holding:
+            # 手上没东西是另一件事（去找点东西），不是「送礼不管用」。
+            return False
+        npc = self.state.npcs[npc_id]
+        return all(gift_attitude_delta(npc.gift_counts.get(item, 0)) == 0 for item in holding)
+
+    def _attitude_gate(self, npc_id: NpcId) -> int | None:
+        """她手上还没说出口的线索里，好感门槛是多少。没有则 None。"""
+        for fact in self.defs.facts.values():
+            if fact.holder != npc_id or fact.id in self.state.player.known_facts:
+                continue
+            if fact.reveal_conditions.attitude_gte is not None:
+                return fact.reveal_conditions.attitude_gte
+        return None
 
     def _oblivion_warning(self) -> str:
         left = OBLIVION_THRESHOLD - self.state.player.oblivion_exposure

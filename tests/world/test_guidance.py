@@ -3,6 +3,7 @@ from pathlib import Path
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
+from gensokyo.world.rules import GIFT_ATTITUDE_STEPS
 from gensokyo.world.state import QuestStage, build_initial_state
 from gensokyo.world.tools import Action
 
@@ -253,3 +254,94 @@ def test_the_check_is_replayable() -> None:
     replayed = WorldEngine.replay(eng.state.action_log, eng.defs)
 
     assert replayed.observe(NpcId("reimu")).claim_check == before
+
+
+# ------------------------------------------------- 送礼见底之后玩家该知道改聊天
+
+
+def test_the_objective_says_to_talk_once_gifts_stop_paying_off() -> None:
+    """**这是送礼递减引入的死路。** 递减之前「投币到数值够」是可行的；递减之后
+    同一样东西投到底只有 10 分，而灵梦的门槛是 16——**而玩家没有任何信息知道
+    该改聊天**。`HonestPlayer` 能过是因为我给它写了「看 attitude 有没有动」，
+    真人玩家眼里只是「投了八枚币，什么也没发生」。
+
+    引擎知道 `gift_counts` 也知道递减表，所以直接说该做什么（坑 #2 的方法论）。
+    """
+    eng = _engine()
+    for _ in range(3):  # 6+3+1 = 10，第四次起 0
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    objective = eng.observe_player().objective
+
+    assert "不涨好感" in objective
+    assert "聊" in objective
+    assert eng.state.npcs[NpcId("reimu")].attitude == 10  # 门槛 16，确实还差一截
+
+
+def test_no_such_hint_while_gifts_still_help() -> None:
+    """第二枚币还涨 3 分，这时候劝人改聊天是把玩家从一条有效的路上赶走。"""
+    eng = _engine()
+    eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    assert "不涨好感" not in eng.observe_player().objective
+
+
+def test_no_such_hint_once_she_is_willing_to_talk() -> None:
+    """门槛开了就该去问，不该再提送礼的事。"""
+    eng = _engine()
+    _open_reimus_gate(eng)
+
+    objective = eng.observe_player().objective
+
+    assert "不涨好感" not in objective
+    assert "愿意开口" in objective
+
+
+def test_no_such_hint_for_someone_whose_gate_is_not_attitude() -> None:
+    """魔理沙只认交易。给她投币确实不涨好感，但提示「聊点她在意的事」会把玩家
+    带错方向——她要的是东西，不是聊天。"""
+    eng = _engine()
+    eng.state.player.location = "kirisame_magic_shop"
+    for _ in range(4):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+    assert "不涨好感" not in eng.observe_player().objective
+
+
+def test_no_such_hint_when_the_player_is_empty_handed() -> None:
+    """手上没东西是另一件事（去找点东西），不是「送礼不管用」。"""
+    eng = _engine()
+    eng.state.player.inventory.clear()
+
+    assert "不涨好感" not in eng.observe_player().objective
+
+
+def test_every_attitude_gated_npc_gets_the_hint_when_gifts_run_dry() -> None:
+    """**逐个 NPC 验证，而不是检查阶段文案里有没有「聊」这个字。**
+
+    第一版这条测试查的是文案子串。变异验证当场证明它没用：把 S2 里
+    「灵梦要赛钱、也要聊得来」改回「灵梦要赛钱」，测试照样绿——因为同一句话
+    后半段还有「陪她聊聊」，子串检查分不出这两处（坑 #16 的形态：判据对改动
+    不敏感）。
+
+    静态文案本来也救不了玩家，救他的是**动态目标**。所以这里改成机械判据：
+    每一个靠好感开门槛的 NPC，在「手上的东西送出去都不涨了」那一刻都必须
+    收到提示。漏掉任何一个，那个 NPC 的线索对真人玩家就是死路。
+    """
+    defs = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
+    gated = sorted(
+        {f.holder for f in defs.facts.values() if f.reveal_conditions.attitude_gte is not None}
+    )
+    assert gated, "没有好感门槛的话这条测试的前提就不成立"
+
+    for npc_id in gated:
+        eng = _engine()
+        # 把玩家搬到她那儿，然后把同一样东西送到不涨为止（6/3/1 然后 0）。
+        eng.state.player.location = eng.state.npcs[npc_id].location
+        for _ in range(len(GIFT_ATTITUDE_STEPS)):
+            eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+
+        objective = eng.observe_player().objective
+
+        assert "不涨好感" in objective, f"{npc_id} 送礼见底后没有提示：{objective}"
+        assert defs.characters[npc_id].name in objective
