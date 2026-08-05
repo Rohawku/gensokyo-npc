@@ -64,8 +64,6 @@ class MemoryItem(BaseModel):
     直接决定芙兰那条线索能不能拿到，而可通关性不该依赖一个相似度阈值
     （坑 #6 是「游戏做出来不可通关」）。
     """
-    access_count: int = 0
-    last_access_seq: int = 0
 
 
 class MemoryStore(BaseModel):

@@ -195,24 +195,37 @@ def test_a_genuine_tie_is_broken_by_id_not_by_insertion_order() -> None:
     assert first == second
 
 
-def test_retrieval_records_the_access() -> None:
-    """访问计数影响降级——常被想起的事不容易忘。"""
-    store = _store(_item(seq=1, content="来访者给了我赛钱。"))
-
-    retrieve(store, "赛钱", _card(), now_seq=40, k=1)
-
-    assert store.items[0].access_count == 1
-    assert store.items[0].last_access_seq == 40
-
-
 def test_score_all_has_no_side_effects() -> None:
-    """「只是看看」的调用不该改访问计数，否则评测跑一遍指标就把记忆库
-    改了，第二遍算出来的数不一样。"""
+    """「只是看看」的调用一个字段都不该改，否则评测跑一遍指标就把记忆库改了，
+    第二遍算出来的数不一样。
+
+    整体比对而不是只看某个计数字段：**原先这里检查的是 `access_count`，而那两个
+    访问计数字段后来被删了**——它们没有任何人读，却被 `retrieve` 每次写，于是
+    「实时的记忆库与读档重建的逐字段相同」这条不变量是假的。这条测试现在守的是
+    「不变就是不变」，加什么新字段都盖得住。
+    """
     store = _store(_item(seq=1, content="来访者给了我赛钱。"))
+    before = store.model_dump()
 
     score_all(store, "赛钱", _card(), now_seq=40)
 
-    assert store.items[0].access_count == 0
+    assert store.model_dump() == before
+
+
+def test_retrieval_has_no_side_effects_either() -> None:
+    """`retrieve` 也不该改记忆库。它以前会——那是删掉访问计数的直接原因：
+    检索是实时对话里的事，不在动作日志里，所以任何被检索改写的字段都会让
+    读档重建出一个和存档那一刻不同的记忆库（坑 #9 的形态）。
+
+    唯一的例外是沉睡召回（`recall_dormant` 把条目转回活跃），而它由玩家的
+    动作触发，因此**能**被回放重建。
+    """
+    store = _store(_item(seq=1, content="来访者给了我赛钱。"))
+    before = store.model_dump()
+
+    retrieve(store, "赛钱", _card(), now_seq=40, k=1)
+
+    assert store.model_dump() == before
 
 
 # ---------------------------------------------------------------- 沉睡召回

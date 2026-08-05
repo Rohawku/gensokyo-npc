@@ -92,6 +92,11 @@ def _do(session: Session, result: ActionResult) -> None:
     if result.ok:
         if result.observation_delta:
             print(f"\n{result.observation_delta}")
+        if session.volunteered is not None:
+            # 她对玩家的动作主动开口。不打出来的话这句台词只存在于轨迹里，
+            # 而真人玩家眼里指令回合依旧是一片沉默。
+            npc_id, turn = session.volunteered
+            print(f"\n{session.engine.defs.characters[npc_id].name}：{turn.utterance}")
         print()
         print(render(session.view()))
     else:

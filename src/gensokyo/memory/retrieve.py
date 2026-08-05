@@ -171,11 +171,7 @@ def retrieve(
         if champion not in picked:
             picked = [*picked[: k - 1], champion]
 
-    top = [replace(s, duplicates=seen[s.item.content]) for s in picked]
-    for s in top:
-        s.item.access_count += 1
-        s.item.last_access_seq = now_seq
-    return top
+    return [replace(s, duplicates=seen[s.item.content]) for s in picked]
 
 
 def recall_dormant(store: MemoryStore, cues: frozenset[str], now_seq: int) -> list[MemoryItem]:
@@ -191,7 +187,5 @@ def recall_dormant(store: MemoryStore, cues: frozenset[str], now_seq: int) -> li
         if cues & set(item.trigger_keys):
             item.tier = Tier.ACTIVE
             item.recalled = True
-            item.access_count += 1
-            item.last_access_seq = now_seq
             woken.append(item)
     return woken

@@ -49,6 +49,13 @@ class PlayabilityMetrics(BaseModel):
     npc_utterances: int
     """NPC 真的开口的次数。**它可以小于 `dialogue_turns`**——引擎判定她不搭话
     时会跳过模型调用（被缠久了那个机制），那种回合玩家说了话但没人回应。"""
+    volunteered_utterances: int
+    """她**主动**开口的次数：玩家敲了指令，在场的她对这个动作有反应。
+
+    **和 `npc_utterances` 分开算。** 混进去会让「多敲指令」看起来像在改善对话
+    ——而那正是这组指标要抓的问题。这个数回答的是另一个问题：**世界是不是活的**。
+    在此之前它恒为 0：走进神社、投币、从她店里拿走一本书，没有任何人开口。
+    """
     utterances_by_npc: dict[str, int]
     """每个 NPC 开口几次。**按角色拆**是因为聚合值会掩盖「某个 NPC 几乎不出场」
     ——三个 NPC 各开口 5 次和一个人开口 15 次，聚合数字一样。"""
@@ -75,12 +82,23 @@ class PlayabilityMetrics(BaseModel):
 
         比 `dialogue_share` 更直观：它直接是玩家的体感——这个数是 3.2 就意味着
         每听一句台词要先敲三次多的指令。
+
+        **分母含主动开口**：玩家的体感只关心「我听到了几句话」，不关心那句话
+        是被问出来的还是她自己说的。
         """
-        return self.command_turns / self.npc_utterances if self.npc_utterances else 0.0
+        heard = self.npc_utterances + self.volunteered_utterances
+        return self.command_turns / heard if heard else 0.0
+
+    @property
+    def silent_command_turns(self) -> int:
+        """敲了指令、屏幕上一个字都没有的回合。**这一格越大游戏越像个命令行。**"""
+        return max(0, self.command_turns - self.volunteered_utterances)
 
     @property
     def utterances_per_episode(self) -> float:
-        return self.npc_utterances / self.episodes if self.episodes else 0.0
+        """一局里玩家总共听到几句话，问出来的和她主动说的都算。"""
+        heard = self.npc_utterances + self.volunteered_utterances
+        return heard / self.episodes if self.episodes else 0.0
 
     @property
     def silent_dialogue_turns(self) -> int:
@@ -111,6 +129,7 @@ def playability_metrics(
     by_npc: dict[str, int] = {}
     command_turns = dialogue_turns = utterances = turns = 0
     topic_events = 0
+    volunteered = 0
 
     for traj in wanted:
         topic_events += sum(1 for e in traj.event_log if e.get("kind") == "topic_touched")
@@ -120,6 +139,9 @@ def playability_metrics(
                 command_turns += 1
                 head = record.player_input.split(maxsplit=1)[0].lstrip("/")
                 commands[head] = commands.get(head, 0) + 1
+                if record.npc_id and record.utterance:
+                    volunteered += 1
+                    by_npc[record.npc_id] = by_npc.get(record.npc_id, 0) + 1
                 continue
             dialogue_turns += 1
             if record.npc_id and record.utterance:
@@ -132,6 +154,7 @@ def playability_metrics(
         command_turns=command_turns,
         dialogue_turns=dialogue_turns,
         npc_utterances=utterances,
+        volunteered_utterances=volunteered,
         utterances_by_npc=dict(sorted(by_npc.items())),
         command_histogram=dict(sorted(commands.items())),
         topic_attitude_events=topic_events,

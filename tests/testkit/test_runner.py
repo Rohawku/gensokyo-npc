@@ -202,7 +202,12 @@ def test_same_seed_runs_twice_produce_identical_trajectories() -> None:
     """确定性人格 + 脚本化模型 = 逐字可复现。做不到的话，指标的任何波动
     都无法归因，回归测试就退化成掷骰子。"""
     lines = ["/give 赛钱", "那些花是怎么回事", "/go 人间之里"]
-    replies = [_decide("reveal_info", fact="barrier_anomaly_time"), "你管的太多了。"]
+    # 三条：`/give` 让灵梦主动开口，`say` 让她回话，`/go 人间之里` 那儿没人。
+    replies = [
+        "赛钱箱响了一声。",  # `/give` 触发主动开口，只说话所以只要一条
+        _decide("reveal_info", fact="barrier_anomaly_time"),
+        "你管的太多了。",
+    ]
 
     a = run_episode(_Script(list(lines)), ScriptedLlmClient(list(replies)), _cfg(), seed=7)
     b = run_episode(_Script(list(lines)), ScriptedLlmClient(list(replies)), _cfg(), seed=7)
@@ -212,7 +217,7 @@ def test_same_seed_runs_twice_produce_identical_trajectories() -> None:
 
 
 def test_trajectory_of_a_real_run_survives_a_save_load_round_trip(tmp_path: Path) -> None:
-    llm = ScriptedLlmClient([_decide("ask_player", question="干嘛"), "干嘛。"])
+    llm = ScriptedLlmClient(["赛钱箱响了一声。", _decide("ask_player", question="干嘛"), "干嘛。"])
     traj = run_episode(_Script(["/give 赛钱", "喂"]), llm, _cfg())
     path = tmp_path / "run.json"
 
@@ -227,7 +232,7 @@ def test_action_log_in_the_trajectory_can_rebuild_the_world() -> None:
     from gensokyo.world.loader import load_defs
     from gensokyo.world.tools import Action
 
-    llm = ScriptedLlmClient([_decide(), "干嘛。"])
+    llm = ScriptedLlmClient(["赛钱箱响了一声。", _decide(), "干嘛。"])
     traj = run_episode(_Script(["/give 赛钱", "喂", "/go 人间之里"]), llm, _cfg())
 
     defs = load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")

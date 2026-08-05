@@ -54,6 +54,16 @@ class _Decided:
     llm_calls: int
 
 
+def _no_action() -> _Decided:
+    """主动开口时的「决策产出」：什么也没决定，什么也没做，零调用。
+
+    每次新建而不是共用一个模块级常量：`turn.tool_calls = decided.issued` 存的是
+    活引用，共用一个实例等于让所有主动开口的回合共享同一个列表（`_Decided`
+    文档里那类 bug 的同一个形状）。
+    """
+    return _Decided(decision=None, issued=[], results=[], outcomes=[], llm_calls=0)
+
+
 def _decide(
     card: CharacterCard,
     engine: WorldEngine,
@@ -164,16 +174,29 @@ def run_turn(
     spoken: list[str] | None = None,
     recalled: list[str] | None = None,
     on_chunk: Callable[[str], None] | None = None,
+    *,
+    speech_only: bool = False,
 ) -> NpcTurn:
     """两阶段回合：先决策（短 JSON），再说话（流式散文）。
 
     合成一次调用时，半个 JSON 没法展示给玩家，本地 8B 模型那十几秒
-    就是整段空白；而且她是盲着说话的——工具成没成功还不知道就开口了。"""
+    就是整段空白；而且她是盲着说话的——工具成没成功还不知道就开口了。
+
+    `speech_only` 跳过决策阶段：她只说话，一个字都不改世界。**主动开口用它。**
+    实测不加这个开关时：玩家 `/give 赛钱`（好感 +6）触发灵梦主动开口，而她在
+    那次免费的决策阶段里顺手 `take_item`（−8）——**送礼净 −2，送得越多关系越
+    差**，三局里两局因此拿不到她的线索。根因不是「她不该偷东西」，是**指令回合
+    不该额外给她一次行动机会**：所有工具的前置条件都是按对话回合设计的，玩家敲
+    一次指令就多送她一个回合，等于凭空改了行动经济。顺带把成本减半（1 次调用
+    而不是 2 次）。
+    """
     npc_id = NpcId(card.id)
     started = time.monotonic()
     mode_before = engine.state.npcs[npc_id].mode
 
-    decided = _decide(card, engine, llm, history, npc_id, recalled or [])
+    decided = (
+        _no_action() if speech_only else _decide(card, engine, llm, history, npc_id, recalled or [])
+    )
 
     utterance = _speak(
         card,

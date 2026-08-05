@@ -52,10 +52,16 @@ def test_giving_when_no_npc_present_fails() -> None:
     assert result.error_code is ErrorCode.NOT_CO_LOCATED
 
 
-def test_npc_taking_players_item_worsens_the_relationship() -> None:
-    """态度是单一的「关系亲疏」轴。NPC 不问一声就从玩家手里拿走东西，
-    关系该变差——ATTITUDE_DELTA["npc_took_item"] 作用在这条 NPC 分支上，
-    而不是「玩家拿走 NPC 的东西」（那条路径不存在）。"""
+def test_npc_taking_players_item_costs_him_the_item_but_not_her_goodwill() -> None:
+    """**她自己的行为不该改「她愿不愿意开口」那个数。**
+
+    原先这里是 `attitude < before`（`ATTITUDE_DELTA["npc_took_item"] = -8`），
+    理由是「态度是单一的关系亲疏轴」。实测那是个死循环：芙兰在六个对话回合里
+    偷三次，好感从 10 掉到 −2，门槛 12 再也够不到，而她的线索是通关必需的——
+    三局里两局卡死。玩家既阻止不了也补不回来。
+
+    惩罚仍然存在，只是全在玩家那一侧：东西真的没了，而它正是别的门槛要用的。
+    """
     eng = _engine()
     reimu = eng.state.npcs[NpcId("reimu")]
     before = reimu.attitude
@@ -65,7 +71,7 @@ def test_npc_taking_players_item_worsens_the_relationship() -> None:
     assert result.ok is True
     assert reimu.inventory[COIN] == 1
     assert eng.state.player.inventory[COIN] == 1
-    assert reimu.attitude < before
+    assert reimu.attitude == before
 
 
 def test_npc_gives_item_to_player() -> None:

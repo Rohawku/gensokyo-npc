@@ -65,13 +65,34 @@ class NpcAgent:
         )
 
     def act(self, player_utterance: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
+        return self._turn(f"玩家：{player_utterance}", player_utterance, on_chunk)
+
+    def react(self, deed: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
+        """玩家**做了**一件事而不是说了一句话，她主动开口。
+
+        历史里记成 `（来访者把赛钱交给了你）` 而不是 `玩家：…`——记成后者
+        她会以为那句旁白是他说出口的话，然后引用它。
+
+        **只说话，不动世界**（`speech_only`）：指令回合不该额外给她一次行动
+        机会。实测不这样做时，玩家送礼触发她开口，她在那次免费的决策阶段里
+        顺手把东西拿走，于是送礼净 −2——见 `run_turn` 的说明。
+        """
+        return self._turn(f"（{deed}）", deed, on_chunk, speech_only=True)
+
+    def _turn(
+        self,
+        history_line: str,
+        query: str,
+        on_chunk: Callable[[str], None] | None,
+        *,
+        speech_only: bool = False,
+    ) -> NpcTurn:
         # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
         # 写入过的玩家发言会变成一条没人回应的孤立记录，模型恢复后
         # 看到的对话历史就是错的。两行一起提交，或都不提交。
-        said = f"玩家：{player_utterance}"
-        window = (self.history + [said])[-HISTORY_WINDOW:]
+        window = (self.history + [history_line])[-HISTORY_WINDOW:]
 
-        recalled = self.recall(player_utterance)
+        recalled = self.recall(query)
         turn = run_turn(
             self.card,
             self.engine,
@@ -80,10 +101,11 @@ class NpcAgent:
             self.spoken,
             render_recall(recalled),
             on_chunk,
+            speech_only=speech_only,
         )
         turn.retrieved_memory_ids = [s.item.id for s in recalled]
 
-        self.history.append(said)
+        self.history.append(history_line)
         self.history.append(f"{self.card.name}：{turn.utterance}")
         key = normalize_utterance(turn.utterance)
         if key and key not in self._spoken_keys:

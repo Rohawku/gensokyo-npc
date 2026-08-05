@@ -28,6 +28,13 @@ class TurnRecord(BaseModel):
     地方。合成一个「没有台词」会让指标读不出区别。"""
     npc_id: str | None = None
     utterance: str = ""
+    volunteered: bool = False
+    """这句台词是她**主动**开口的，不是回应玩家的问话（`kind` 是 command）。
+
+    分开是因为它们回答的问题不同：「玩家问、她答」衡量对话玩法，「玩家做了
+    件事、她有反应」衡量世界是不是活的。混成一个数会让「多敲指令」看起来
+    像是在改善对话占比。
+    """
     thought: str = ""
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     """{"tool":..., "args":...}，本回合实际下发的每一次调用（含重试时

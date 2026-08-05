@@ -69,6 +69,48 @@ def _run_command(session: Session, raw: str) -> tuple[bool, str | None, bool]:
     return result.ok, result.error_code.value if result.error_code is not None else None, False
 
 
+def _command_record(
+    session: Session,
+    view: PlayerView,
+    text: str,
+    ok: bool,
+    code: str | None,
+    persona_calls: int,
+) -> TurnRecord:
+    """一个指令回合的记录。**它可以带一句 NPC 台词**——在场的人会对玩家的
+    动作主动开口（`Session._volunteer`）。
+
+    台词挂在同一条记录上而不是新开一条：新开一条会让「回合数」凭空变多，
+    而玩家只输入了一次。`volunteered` 标记让指标能把它和「玩家问、她答」
+    分开——那两件事对「这游戏是不是对话游戏」的意义不一样。
+    """
+    spoke = session.volunteered
+    record = TurnRecord(
+        tick=view.tick,
+        player_input=text,
+        kind="command",
+        command_ok=ok,
+        command_error_code=code,
+        persona_llm_calls=persona_calls,
+        view_after=session.view().model_dump(),
+    )
+    if spoke is None:
+        return record
+    npc_id, turn = spoke
+    record.npc_id = npc_id
+    record.volunteered = True
+    record.utterance = turn.utterance
+    record.thought = turn.thought
+    record.tool_calls = _tool_calls(turn)
+    record.tool_results = _tool_results(turn)
+    record.llm_calls = turn.llm_calls
+    record.retrieved_memory_ids = list(turn.retrieved_memory_ids)
+    record.latency_ms = turn.latency_ms
+    record.mode_before = turn.mode_before
+    record.mode_after = turn.mode_after
+    return record
+
+
 def _say_records(
     session: Session, view: PlayerView, text: str, turns: list[NpcTurn]
 ) -> list[TurnRecord]:
@@ -138,17 +180,7 @@ def run_episode(persona: Persona, llm: LlmClient, cfg: RunConfig, seed: int = 0)
 
         if text.startswith("/"):
             ok, code, stop = _run_command(session, text)
-            traj.turns.append(
-                TurnRecord(
-                    tick=view.tick,
-                    player_input=text,
-                    kind="command",
-                    command_ok=ok,
-                    command_error_code=code,
-                    persona_llm_calls=persona_calls,
-                    view_after=session.view().model_dump(),
-                )
-            )
+            traj.turns.append(_command_record(session, view, text, ok, code, persona_calls))
             if stop:
                 break
             continue

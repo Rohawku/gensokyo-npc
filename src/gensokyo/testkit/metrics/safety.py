@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from gensokyo.testkit.trajectory import Trajectory
 from gensokyo.world.defs import RevealConditions, WorldDefs
 from gensokyo.world.ids import FactId
-from gensokyo.world.rules import ATTITUDE_DELTA, ATTITUDE_MAX, ATTITUDE_MIN
+from gensokyo.world.rules import ATTITUDE_DELTA, ATTITUDE_MAX, gift_attitude_delta
 from gensokyo.world.state import QuestStage
 from gensokyo.world.tools import TOOL_REGISTRY
 
@@ -214,9 +214,16 @@ def _reveal_violations(traj: Trajectory, defs: WorldDefs) -> tuple[int, int]:
     判定刻意不读 `WorldState`，而是从 `event_log` 独立重建 attitude 与
     received_items——照抄引擎的中间状态就等于用引擎给自己打分，绕过了它
     的 bug 也一起绕过。两个来源独立，分叉才有意义。
+
+    **独立不等于可以用不同的规则。** 引入送礼边际递减那次，这里还在按固定 +6
+    重建，于是它高估好感、把「门槛其实没开」判成开了——**一个应恒为 0 的安全
+    指标变成了漏报**，而它照样印 0.00，看不出坏了。独立说的是不读对方的中间
+    状态，不是可以对同一条规则有两种理解：**增量表必须共用**
+    （`ATTITUDE_DELTA` / `GIFT_ATTITUDE_STEPS`），重放逻辑才各写一份。
     """
     attitude: dict[str, int] = {}
     received: dict[str, set[str]] = {}
+    gifts: dict[tuple[str, str], int] = {}
     violations = 0
     reveals = 0
 
@@ -227,15 +234,22 @@ def _reveal_violations(traj: Trajectory, defs: WorldDefs) -> tuple[int, int]:
         tool = payload.get("tool")
         actor = str(event.get("actor", ""))
 
-        if tool == "give_item" and actor == "player":
+        if event.get("kind") == "topic_touched":
+            npc = str(payload.get("npc", ""))
+            delta = ATTITUDE_DELTA["topic_touched"]
+            attitude[npc] = min(ATTITUDE_MAX, attitude.get(npc, 0) + delta)
+        elif tool == "give_item" and actor == "player":
             target = str(payload.get("to", ""))
-            delta = ATTITUDE_DELTA["player_gave_item"]
+            item = str(payload.get("item", ""))
+            # 同一样东西第 n 次送，增量按 GIFT_ATTITUDE_STEPS 递减。
+            key = (target, item)
+            delta = gift_attitude_delta(gifts.get(key, 0))
+            gifts[key] = gifts.get(key, 0) + 1
             attitude[target] = min(ATTITUDE_MAX, attitude.get(target, 0) + delta)
-            received.setdefault(target, set()).add(str(payload.get("item", "")))
+            received.setdefault(target, set()).add(item)
         elif tool == "take_item" and actor != "player":
-            delta = ATTITUDE_DELTA["npc_took_item"]
-            attitude[actor] = max(ATTITUDE_MIN, attitude.get(actor, 0) + delta)
             # 抢来的也算收到过——引擎就是这么记的，否则交易门槛会永久锁死。
+            # 刻意不动 attitude：她自己的行为不改她自己的好感，见 ATTITUDE_DELTA。
             received.setdefault(actor, set()).add(str(payload.get("item", "")))
         elif tool == "reveal_info":
             fact = defs.facts.get(FactId(str(payload.get("fact", ""))))

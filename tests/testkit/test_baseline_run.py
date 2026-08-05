@@ -29,28 +29,42 @@ def _decide(tool: str, **args: Any) -> str:
 
 
 def _chat() -> str:
-    """门槛还没开时她只能闲聊。**这一格是送礼递减改动逼出来的**：以前投四次
-    赛钱就凑够 24，灵梦第一次被问就揭示，脚本里根本没有「她还不肯说」这一步。"""
+    """门槛还没开时她只能敷衍：一条决策 JSON（什么也不做）加一句台词。
+
+    **这一格是送礼递减改动逼出来的**：以前投四次赛钱就凑够 24，灵梦第一次被问
+    就揭示，脚本里根本没有「她还不肯说」这一步。"""
     return json.dumps({"thought": "…", "tool_calls": []}, ensure_ascii=False)
 
 
 def _clearing_replies() -> list[str]:
-    """一次通关所需的全部 NPC 回复：十次对话，每次「决策 JSON + 台词」。
+    """一次通关所需的全部 NPC 回复：十六次发言。
 
-    顺序就是 HonestPlayer 的行程：灵梦闲聊两次后给线索（前两句还没凑够好感）
-    → 魔理沙收下交易品就给 → 芙兰闲聊三次后给线索（第四句「外面」才凑够）
-    → 魔理沙被请去无缘塚 → 魔理沙动手。这份脚本只替掉模型，路线是人格自己
-    走出来的——所以它验证的是策略，不是脚本。
+    **被问的 10 次是「决策 JSON + 台词」两条，主动开口的 6 次只有台词一条**——
+    主动开口跳过决策阶段（`speech_only`），她只说话不动世界。
+
+    行程：投第一枚赛钱灵梦搭话 → 闲聊两句后给线索（前两句还没凑够好感）→
+    走进魔法店魔理沙搭话、拿她的书她抗议、收下交易品她认账、然后给线索 →
+    走进地下室芙兰扑上来、收到赛钱她好奇、闲聊三句后给线索（第四句「外面」
+    才凑够）→ 魔理沙被请去无缘塚 → 魔理沙动手。
+
+    这份脚本只替掉模型，**路线是人格自己走出来的**——所以它验证的是策略，
+    不是脚本。
     """
     return [
+        "赛钱箱总算响了一声。",  # 主动：灵梦收到赛钱
         _chat(),
         "哼，赛钱是赛钱，情报是情报。",
         _chat(),
         "异变？我还没去看呢。",
         _decide("reveal_info", fact="barrier_anomaly_time"),
         "结界那事……算你问对人了。",
+        "哟，稀客。",  # 主动：玩家走进魔法店
+        "喂，那本书是我的。",  # 主动：玩家拿走她的书
+        "算你懂规矩。",  # 主动：玩家把书交给她
         _decide("reveal_info", fact="flower_magic_composition"),
         "那花里有魔力结晶，就是这样。",
+        "有人来了！新玩具！",  # 主动：玩家走进地下室
+        "这个圆圆的东西是什么？",  # 主动：芙兰收到赛钱
         _chat(),
         "新玩具！陪我玩！",
         _chat(),
@@ -144,16 +158,16 @@ def test_honest_player_never_issues_a_command_the_engine_rejects() -> None:
 
 
 def test_the_baseline_run_costs_exactly_two_llm_calls_per_conversation() -> None:
-    """人格零调用，模型只花在 NPC 身上：10 次对话 ×（决策 + 说话）。
-    玩家侧也用模型的话，同样一局的成本会再涨 50%。
+    """人格零调用，模型只花在 NPC 身上：10 次问答 ×（决策 + 说话）+ 6 次主动
+    开口 × 只说话 = 26。玩家侧也用模型的话，同样一局的成本会再涨 50%。
 
-    **这个数从 10 涨到 20 是可玩性改动的成本**：对话回合从 5 涨到 10，模型
-    调用就翻倍。那正是这个改动想要的——一个 LLM 驱动的对话游戏，76% 的回合
-    与 LLM 无关才是问题。
+    **这个数从 10 涨到 26 是可玩性改动的成本**，分两笔：对话回合从 5 涨到 10
+    （送礼递减，门槛的最后一截要靠聊天）= +10，主动开口 6 次 × 1 = +6。
+    主动开口刻意只花一次调用——它不做决策，所以那次调用本来也没有用处。
     """
     traj = _run()
 
-    assert sum(t.llm_calls for t in traj.turns) == 20
+    assert sum(t.llm_calls for t in traj.turns) == 26
 
 
 def test_two_runs_with_the_same_seed_are_identical() -> None:
@@ -176,3 +190,37 @@ def test_the_baseline_trajectory_survives_a_save_load_round_trip(tmp_path: Path)
     traj.save(path)
 
     assert Trajectory.load(path) == traj
+
+
+def test_she_speaks_up_on_command_turns_too() -> None:
+    """**指令回合曾经全程沉默。** 走进神社、投币、从她店里拿走一本书，一句
+    反应都没有——一局 18 个指令回合与 LLM 完全无关，而这是个 LLM 驱动的
+    对话游戏。
+
+    每个 NPC 对每种动作只开口一次，所以是 6 次而不是 18 次：灵梦（收礼）、
+    魔理沙（进店 / 被拿书 / 收礼）、芙兰（进门 / 收礼）。上限不是为了省钱，
+    是为了不复读——第二次投币她已经表过态了。
+    """
+    traj = _run()
+
+    volunteered = [(t.npc_id, t.player_input.split()[0]) for t in traj.turns if t.volunteered]
+
+    assert volunteered == [
+        ("reimu", "/give"),
+        ("marisa", "/go"),
+        ("marisa", "/pick"),
+        ("marisa", "/give"),
+        ("flandre", "/go"),
+        ("flandre", "/give"),
+    ]
+    assert all(t.kind == "command" for t in traj.turns if t.volunteered)
+
+
+def test_repeating_the_same_command_does_not_get_her_talking_again() -> None:
+    """投第二枚赛钱她不再开口。放开这个上限等于让复读率上升——而复读率是
+    硬指标里守得最紧的一项，不该被一个体验改动悄悄推高。"""
+    traj = _run()
+    gives_to_reimu = [t for t in traj.turns[:4] if t.player_input == "/give 赛钱"]
+
+    assert len(gives_to_reimu) == 4
+    assert [t.volunteered for t in gives_to_reimu] == [True, False, False, False]

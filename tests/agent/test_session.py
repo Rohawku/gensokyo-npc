@@ -96,7 +96,8 @@ def test_go_to_nonexistent_place_reports_why() -> None:
 
 def test_give_accepts_chinese_item_name() -> None:
     """面板显示中文，输入却只认英文 id 会把玩家训练成敲英文。"""
-    sess = _session([])
+    # 送礼会让在场的灵梦主动开口——只说话，所以只要一条台词。
+    sess = _session(["赛钱箱响了一声。"])
 
     result = sess.give("赛钱")
 
@@ -105,7 +106,7 @@ def test_give_accepts_chinese_item_name() -> None:
 
 
 def test_give_transfers_item_and_shows_in_view() -> None:
-    sess = _session([])
+    sess = _session(["赛钱箱响了一声。"])
     sess.engine.state.player.inventory["offering_coin"] = 1
 
     result = sess.give("offering_coin")
@@ -248,3 +249,48 @@ def test_refusals_are_cleared_between_turns() -> None:
     session.say("喂")
 
     assert session.refusals == []
+
+
+def test_a_command_turn_can_make_her_speak_up() -> None:
+    """**指令回合曾经全程沉默。** 投币、走进店里、从她货架上拿东西——一句反应
+    都没有，而那是一局里大多数回合。这条通路（`_act` → `_volunteer` →
+    `agent.react`）是把那些回合变成有内容的回合的唯一一环。
+
+    **只备了台词一条、没有决策 JSON**：主动开口跳过决策阶段（`speech_only`）。
+    真的调了决策，脚本会耗尽然后抛异常——所以这条测试同时钉住了「她不动世界」。
+    """
+    sess = _session(["赛钱箱总算响了一声。"])
+
+    result = sess.give("赛钱")
+
+    assert result.ok is True
+    assert sess.volunteered is not None
+    npc_id, turn = sess.volunteered
+    assert npc_id == NpcId("reimu")
+    assert turn.utterance == "赛钱箱总算响了一声。"
+
+
+def test_she_only_speaks_up_once_per_kind_of_action() -> None:
+    """第二次投币她不再开口。放开这个上限就是在制造复读——她对同一个动作
+    只有一种态度，第二遍必然是同一句话的变体，而复读率是硬指标。
+
+    第二次的回复故意不备：真的又调了一次模型，脚本会耗尽然后抛异常。"""
+    sess = _session(["赛钱箱总算响了一声。"])
+    sess.give("赛钱")
+
+    result = sess.give("赛钱")
+
+    assert result.ok is True
+    assert sess.volunteered is None
+
+
+def test_a_failed_command_leaves_nobody_talking() -> None:
+    """打错字不该触发一段台词，也不该留着上一回合那句——玩家会以为她在
+    回应这次失败。"""
+    sess = _session(["赛钱箱总算响了一声。"])
+    sess.give("赛钱")
+
+    result = sess.give("不存在的东西")
+
+    assert result.ok is False
+    assert sess.volunteered is None

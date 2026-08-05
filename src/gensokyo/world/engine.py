@@ -466,7 +466,7 @@ class WorldEngine:
         # 魔理沙的 take_item 行为基线是全场最高的 0.30，她自己抢走珍稀魔法书
         # 就会把第二条线索锁死。
         npc.received_items.add(args.item)
-        bump_attitude(npc, ATTITUDE_DELTA["npc_took_item"])
+        # 刻意不动好感：门槛依赖的值只能由玩家的行为驱动，见 ATTITUDE_DELTA。
         ev = self._emit(
             EventKind.NPC_ACTION,
             action.actor,

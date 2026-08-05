@@ -161,3 +161,16 @@ def give_event(
         "location": "hakurei_shrine",
         "payload": {"tool": "give_item", "item": item, "count": count, "to": to},
     }
+
+
+def topic_event(npc: str, topic: str, *, event_id: str = "e00003", tick: int = 1) -> dict[str, Any]:
+    """聊到她在意的话题，好感 +4。安全指标重建 attitude 时必须算上它——
+    漏掉它会低估好感，把合法的揭示判成越过门槛。"""
+    return {
+        "id": event_id,
+        "tick": tick,
+        "kind": "topic_touched",
+        "actor": npc,
+        "location": "hakurei_shrine",
+        "payload": {"topic": topic, "npc": npc},
+    }

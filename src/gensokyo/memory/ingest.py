@@ -158,7 +158,6 @@ def ingest(
             source_event_id=event.id,
             kind=key,
             salience=score,
-            last_access_seq=seq,
         )
         store.items.append(item)
         store.ingested_events.add(event.id)

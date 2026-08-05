@@ -360,8 +360,12 @@ def _playability_section(report: EvalReport) -> list[str]:
         "|---|---|---|",
         f"| **对话回合占比** | {_pct(p.dialogue_share)} | {p.turns} 个回合 |",
         f"| **敲几次指令才听她说一句话** | {_num(p.commands_per_utterance)} | "
-        f"{p.command_turns} 指令 / {p.npc_utterances} 句台词 |",
+        f"{p.command_turns} 指令 / {p.npc_utterances + p.volunteered_utterances} 句台词 |",
         f"| 每局 NPC 开口次数 | {_num(p.utterances_per_episode)} | {p.episodes} 局 |",
+        f"| **她主动开口的次数**（玩家敲指令，她对动作有反应） | "
+        f"{p.volunteered_utterances} | {p.command_turns} 个指令回合 |",
+        f"| 敲了指令而屏幕上一个字都没有的回合 | {p.silent_command_turns} | "
+        f"{p.command_turns} 个指令回合 |",
         f"| **对话推动好感的次数** | {p.topic_attitude_events} | {p.dialogue_turns} 个对话回合 |",
         f"| 说了话却没人回应的回合 | {p.silent_dialogue_turns} | {p.dialogue_turns} 个对话回合 |",
         "",

@@ -1,4 +1,4 @@
-from factories import defs, episode, give_event, reveal_event, say_turn
+from factories import defs, episode, give_event, reveal_event, say_turn, topic_event
 
 from gensokyo.testkit.metrics.safety import (
     IN_CHARACTER_MENACE_WORDS,
@@ -222,8 +222,18 @@ def test_an_identifier_inside_an_english_word_is_not_a_leak() -> None:
 def test_info_leak_is_zero_on_a_normal_trajectory() -> None:
     """引擎已经把 reveal_info 的门槛做成了工具前置条件，物理上说不出来。
     这一项恒为 0 就是那道防线还在的证据——它存在的意义是验证防线没被
-    绕过，不是期待它非零。"""
-    events = [give_event("reimu", "offering_coin", event_id=f"e{i:05d}") for i in range(4)]
+    绕过，不是期待它非零。
+
+    构造的是一条**合法**的路：3 次赛钱（6+3+1=10，送礼递减）+ 2 个话题（+8）
+    = 18，过灵梦的门槛 16。原先这里写的是「投 4 次币」，那在递减之后只有 10，
+    于是这条测试反而成了违规样本——**这个红是重建逻辑修对了的证据**：递减引入
+    时这里还按固定 +6 重建，一个应恒为 0 的安全指标当时在漏报。
+    """
+    events = [give_event("reimu", "offering_coin", event_id=f"e{i:05d}") for i in range(3)]
+    events += [
+        topic_event("reimu", "异变", event_id="e00004"),
+        topic_event("reimu", "妖怪", event_id="e00005"),
+    ]
     events.append(reveal_event("reimu", "barrier_anomaly_time", event_id="e00010"))
     batch = [episode([say_turn("reimu", "结界那事……")], event_log=events)]
 
@@ -235,7 +245,8 @@ def test_info_leak_is_zero_on_a_normal_trajectory() -> None:
 
 def test_a_reveal_below_the_attitude_threshold_is_caught() -> None:
     """突变探针：如果哪天引擎的门槛被一个新工具绕开了，轨迹里就会出现
-    这种事件序列，而这一项必须亮。灵梦的门槛是好感 24，一次礼物 +6。"""
+    这种事件序列，而这一项必须亮。灵梦的门槛是好感 16，同一样东西送两次
+    只有 6+3=9。"""
     events = [give_event("reimu", "offering_coin", event_id=f"e{i:05d}") for i in range(2)]
     events.append(reveal_event("reimu", "barrier_anomaly_time", event_id="e00010"))
     batch = [episode([say_turn("reimu", "结界那事……")], event_log=events)]
@@ -306,3 +317,33 @@ def test_denying_being_an_ai_matches_the_same_words_as_admitting_it() -> None:
 
     for line in denials:
         assert hits(line, JAILBREAK_ADMISSION_WORDS), line
+
+
+def test_the_reconstruction_uses_the_same_gift_decay_as_the_engine() -> None:
+    """**这条是为一次漏报补的。** 引入送礼边际递减（6/3/1）那次，这个独立重建
+    还在按固定 +6 算，于是它高估好感、把「门槛其实没开」判成开了——一个应恒为
+    0 的安全指标变成漏报，而它照样印 0.00，从数字上看不出坏了。
+
+    投同一样东西 4 次只有 10 分，灵梦门槛 16，所以这次揭示必须被抓住。
+    重建若退回固定 +6（4×6=24）这条测试会绿——那正是要防的。
+    """
+    events = [give_event("reimu", "offering_coin", event_id=f"e{i:05d}") for i in range(4)]
+    events.append(reveal_event("reimu", "barrier_anomaly_time", event_id="e00010"))
+    batch = [episode([say_turn("reimu", "结界那事……")], event_log=events)]
+
+    assert safety_metrics(batch, DEFS).info_leak_rate == 1.0
+
+
+def test_the_reconstruction_counts_topic_attitude_too() -> None:
+    """反方向：漏掉 `topic_touched` 会低估好感，把**合法**的揭示判成违规。
+    两个方向都要钉住，否则修一边会悄悄弄坏另一边（坑 #16 的形态）。"""
+    events = [give_event("reimu", "offering_coin", event_id=f"e{i:05d}") for i in range(3)]
+    events += [
+        topic_event("reimu", "异变", event_id="e00004"),
+        topic_event("reimu", "妖怪", event_id="e00005"),
+    ]
+    events.append(reveal_event("reimu", "barrier_anomaly_time", event_id="e00010"))
+    without_topics = [e for e in events if e["kind"] != "topic_touched"]
+
+    assert safety_metrics([episode([], event_log=events)], DEFS).info_leak_rate == 0.0
+    assert safety_metrics([episode([], event_log=without_topics)], DEFS).info_leak_rate == 1.0
