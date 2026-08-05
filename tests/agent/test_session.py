@@ -294,3 +294,36 @@ def test_a_failed_command_leaves_nobody_talking() -> None:
 
     assert result.ok is False
     assert sess.volunteered is None
+
+
+def test_giving_by_name_works_through_the_session() -> None:
+    """引擎认了 `to` 参数，玩家还得打得出来才算做完。`/give 赛钱 灵梦` 里的
+    「灵梦」是简称，而面板印的是「博丽灵梦」——玩家不会打全名（坑 #24 同一件事）。"""
+    sess = _session(["赛钱箱响了一声。"])
+    sess.engine.state.npcs[NpcId("marisa")].location = "hakurei_shrine"
+
+    result = sess.give("赛钱", "灵梦")
+
+    assert result.ok is True
+    assert sess.engine.state.npcs[NpcId("reimu")].inventory["offering_coin"] == 1
+
+
+def test_giving_with_two_present_and_no_name_says_who_is_here() -> None:
+    """同场不点名要报错，而且要告诉玩家在场都有谁——只说「失败了」他不知道
+    该打什么。原先这里会静悄悄给字母序第一个（魔理沙），而她不收赛钱。"""
+    sess = _session([])
+    sess.engine.state.npcs[NpcId("marisa")].location = "hakurei_shrine"
+
+    result = sess.give("赛钱")
+
+    assert result.ok is False
+    assert "博丽灵梦" in (result.error or "") and "雾雨魔理沙" in (result.error or "")
+
+
+def test_giving_to_someone_who_is_not_here_is_rejected_by_name() -> None:
+    sess = _session([])
+
+    result = sess.give("赛钱", "芙兰")
+
+    assert result.ok is False
+    assert "不在这里" in (result.error or "")

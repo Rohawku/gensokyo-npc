@@ -390,12 +390,37 @@ class WorldEngine:
     def _push_items(bag: dict[ItemId, int], item: ItemId, count: int) -> None:
         bag[item] = bag.get(item, 0) + count
 
+    def _gift_target(self, named: NpcId | None) -> "NpcId | ActionResult":
+        """送礼给谁。返回目标，或者一个可执行的失败。
+
+        **同场时不猜。** 原先取 `_npcs_here()[0]`，也就是字母序第一个，于是
+        玩家在灵梦和魔理沙面前投赛钱，钱静悄悄进了魔理沙的口袋——而她不收赛钱。
+        错误里必须列出在场都有谁，否则玩家只知道「失败了」，不知道该打什么。
+        """
+        present = self._npcs_here()
+        if not present:
+            return ActionResult.failed(ErrorCode.NOT_CO_LOCATED, "这里没有人可以给。")
+        if named is not None:
+            if named not in present:
+                return ActionResult.failed(
+                    ErrorCode.NOT_CO_LOCATED, f"{self._npc_name(named)}不在这里。"
+                )
+            return named
+        if len(present) == 1:
+            return present[0]
+        who = "、".join(self._npc_name(n) for n in present)
+        return ActionResult.failed(ErrorCode.BAD_ARGS, f"这里有{who}，要给谁？")
+
+    def _npc_name(self, npc_id: NpcId) -> str:
+        card = self.defs.characters.get(npc_id)
+        return card.name if card else str(npc_id)
+
     def _do_give_item(self, action: Action, args: GiveItemArgs) -> ActionResult:
         if action.actor == "player":
-            present = self._npcs_here()
-            if not present:
-                return ActionResult.failed(ErrorCode.NOT_CO_LOCATED, "这里没有人可以给。")
-            target = present[0]
+            resolved = self._gift_target(args.to)
+            if isinstance(resolved, ActionResult):
+                return resolved
+            target = resolved
             npc = self.state.npcs[target]
             if not self._pop_items(self.state.player.inventory, args.item, args.count):
                 return ActionResult.failed(
@@ -494,6 +519,17 @@ class WorldEngine:
 
     def _mode_hint(self, npc_id: NpcId) -> str:
         return self._current_mode(npc_id).speech_hint
+
+    def resolve_npc(self, text: str) -> NpcId | None:
+        """把玩家输入的中文名解析成 NpcId。姓名、名字、id 都认。
+
+        「灵梦」要能用：面板印的是「博丽灵梦」，而玩家不会打全名——`resolve_item`
+        为同一个理由认物品简称（坑 #24）。
+        """
+        for npc_id, card in self.defs.characters.items():
+            if text == npc_id or text == card.name or text in card.name:
+                return npc_id
+        return None
 
     def resolve_item(self, text: str) -> ItemId | None:
         """把玩家输入的中文物品名或英文 id 解析成 ItemId。

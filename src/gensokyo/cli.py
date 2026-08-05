@@ -29,7 +29,7 @@ def load_dotenv(path: Path) -> None:
 
 HELP = """指令（/move /walk 同 /go，/take /get 同 /pick）：
   /go <地点>     移动
-  /give <物品>   把物品交给在场的人
+  /give <物品> [谁]  把物品交给在场的人；两个人同场时要点名
   /pick <物品>   捡起地上的东西
   /look          查看当前状态
   /save [名字]   存档（默认 saves/quicksave.json）
@@ -166,7 +166,9 @@ def main() -> None:
             if cmd == "go":
                 _do(session, session.go(arg))
             elif cmd == "give":
-                _do(session, session.give(arg))
+                # `/give 赛钱 灵梦`。人名可省，只有一个人在场时引擎自己决定。
+                item, _, who = arg.partition(" ")
+                _do(session, session.give(item, who.strip()))
             elif cmd == "pick":
                 _do(session, session.pick(arg))
             continue

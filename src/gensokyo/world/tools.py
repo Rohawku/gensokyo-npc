@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from gensokyo.world.events import Event
-from gensokyo.world.ids import FactId, ItemId, LocationId
+from gensokyo.world.ids import FactId, ItemId, LocationId, NpcId
 
 
 class ErrorCode(StrEnum):
@@ -37,6 +37,14 @@ class TravelToArgs(BaseModel):
 class GiveItemArgs(BaseModel):
     item: ItemId
     count: int = Field(default=1, ge=1)
+    to: NpcId | None = None
+    """给谁。**同场有两个人时必填**，只有一个人时可以省略。
+
+    原先没有这个参数，目标取 `_npcs_here()[0]`——那是字母序（芙兰 < 魔理沙 <
+    灵梦）。两个人同场时玩家投的赛钱会静悄悄进魔理沙的口袋，而她不收赛钱。
+    默认 None 而不是必填：绝大多数回合只有一个人在场，让玩家每次都点名等于
+    为一个罕见情况给常见情况加税。
+    """
 
 
 class TakeItemArgs(BaseModel):

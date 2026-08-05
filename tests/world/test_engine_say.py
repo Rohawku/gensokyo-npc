@@ -441,3 +441,28 @@ def test_topic_credit_survives_replay() -> None:
     replayed = WorldEngine.replay(engine.state.action_log, defs)
 
     assert replayed.state.npcs[NpcId("reimu")].attitude == expected
+
+
+def test_one_line_reaches_everyone_in_the_room_and_that_is_intentional() -> None:
+    """同场时玩家一句话推高**所有**在场 NPC 的情绪、也给所有人记话题。
+
+    这一条曾经列在「多 Agent 已知缺口」里（坑 #20 引入时只有单人场景，
+    没考虑过同场）。查完的结论是**它不是缺口**：`say` 本来就是广播——
+    `Session.say` 会让每个不拒绝的在场 NPC 都回应一句。既然两个人都听见了、
+    都要答，就不该只有一个人的情绪动。
+
+    钉下来是为了让这个判断有据可查：哪天改成「只对某一个人说」，这条会红，
+    而那时才该重新讨论广播的语义。
+    """
+    eng = _engine()
+    eng.state.npcs[NpcId("marisa")].location = eng.state.player.location
+    reimu_before = eng.state.npcs[NpcId("reimu")].emotion
+    marisa_before = eng.state.npcs[NpcId("marisa")].emotion
+
+    eng.apply(Action(actor="player", tool="say", args={"text": "神社最近有魔法上的怪事吗"}))
+
+    assert eng.state.npcs[NpcId("reimu")].emotion != reimu_before
+    assert eng.state.npcs[NpcId("marisa")].emotion != marisa_before
+    # 一句话可以同时命中两个人各自在意的话题：「神社」是灵梦的，「魔法」是魔理沙的。
+    assert eng.state.npcs[NpcId("reimu")].discussed_topics == {"神社"}
+    assert eng.state.npcs[NpcId("marisa")].discussed_topics == {"魔法"}

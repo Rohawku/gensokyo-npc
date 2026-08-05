@@ -65,7 +65,15 @@ def _run_command(session: Session, raw: str) -> tuple[bool, str | None, bool]:
     if not arg:
         return False, MISSING_ARG, False
 
-    result = {"go": session.go, "give": session.give, "pick": session.pick}[cmd](arg)
+    if cmd == "go":
+        result = session.go(arg)
+    elif cmd == "pick":
+        result = session.pick(arg)
+    else:
+        # `/give 赛钱 灵梦`：物品名不含空格，所以第一段是物品、其余是人名。
+        # 人名可以省略——只有一个人在场时引擎自己决定（见 GiveItemArgs.to）。
+        item, _, who = arg.partition(" ")
+        result = session.give(item, who.strip())
     return result.ok, result.error_code.value if result.error_code is not None else None, False
 
 

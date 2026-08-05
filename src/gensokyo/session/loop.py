@@ -171,12 +171,19 @@ class Session:
             return ActionResult.failed(ErrorCode.NO_SUCH_EXIT, f"幻想乡没有叫「{place}」的地方。")
         return self._act(Action(actor="player", tool="move", args={"to": target}))
 
-    def give(self, item: str) -> ActionResult:
+    def give(self, item: str, to: str = "") -> ActionResult:
+        """`to` 为空时由引擎决定：只有一个人在场就给她，两个人就报错让玩家点名。"""
         self.volunteered = None
         target = self.engine.resolve_item(item)
         if target is None:
             return ActionResult.failed(ErrorCode.BAD_ARGS, f"没有叫「{item}」的东西。")
-        return self._act(Action(actor="player", tool="give_item", args={"item": target}))
+        args: dict[str, object] = {"item": target}
+        if to:
+            who = self.engine.resolve_npc(to)
+            if who is None:
+                return ActionResult.failed(ErrorCode.BAD_ARGS, f"这里没有叫「{to}」的人。")
+            args["to"] = who
+        return self._act(Action(actor="player", tool="give_item", args=args))
 
     def pick(self, item: str) -> ActionResult:
         self.volunteered = None

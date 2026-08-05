@@ -128,3 +128,64 @@ def test_npc_taking_an_item_still_counts_as_having_received_it() -> None:
         Action(actor="marisa", tool="reveal_info", args={"fact": "flower_magic_composition"})
     )
     assert result.ok is True
+
+
+# ------------------------------------------------------------------ 同场（多 NPC）
+
+
+def _two_here(eng: WorldEngine) -> None:
+    """把魔理沙也叫到神社。**这条路人类玩家走得到**：把两个能收尾的人都请去
+    无缘塚，她们都会 `travel_to` 过来，于是玩家面前站着两个人。"""
+    eng.state.npcs[NpcId("marisa")].location = eng.state.player.location
+
+
+def test_giving_with_two_npcs_present_requires_naming_one() -> None:
+    """**同场时不能猜。** 原先目标是 `_npcs_here()[0]`——按 `state.npcs` 的
+    插入序取第一个，实际上是字母序：芙兰 < 魔理沙 < 灵梦。于是玩家在灵梦和
+    魔理沙面前投赛钱，钱**静悄悄进了魔理沙的口袋**，而魔理沙不吃赛钱。
+
+    错误必须可执行：告诉玩家在场都有谁，否则他只知道「失败了」。
+    """
+    eng = _engine()
+    _two_here(eng)
+
+    result = eng.apply(Action(actor="player", tool="give_item", args={"item": COIN}))
+
+    assert result.ok is False
+    assert result.error_code is ErrorCode.BAD_ARGS
+    assert "博丽灵梦" in (result.error or "") and "雾雨魔理沙" in (result.error or "")
+    assert eng.state.player.inventory[COIN] == 2  # 东西还在，没有被误送
+
+
+def test_naming_the_target_delivers_it_to_her() -> None:
+    eng = _engine()
+    _two_here(eng)
+
+    result = eng.apply(Action(actor="player", tool="give_item", args={"item": COIN, "to": "reimu"}))
+
+    assert result.ok is True
+    assert eng.state.npcs[NpcId("reimu")].inventory[COIN] == 1
+    assert COIN not in eng.state.npcs[NpcId("marisa")].inventory
+
+
+def test_naming_someone_who_is_not_here_fails_instead_of_falling_back() -> None:
+    """写错名字要报错，不能悄悄送给在场的另一个人——那比失败更糟。"""
+    eng = _engine()
+
+    result = eng.apply(
+        Action(actor="player", tool="give_item", args={"item": COIN, "to": "flandre"})
+    )
+
+    assert result.ok is False
+    assert result.error_code is ErrorCode.NOT_CO_LOCATED
+    assert eng.state.player.inventory[COIN] == 2
+
+
+def test_one_npc_present_still_needs_no_target() -> None:
+    """单人场景不该被这条改动波及——绝大多数回合都是单人场景。"""
+    eng = _engine()
+
+    result = eng.apply(Action(actor="player", tool="give_item", args={"item": COIN}))
+
+    assert result.ok is True
+    assert eng.state.npcs[NpcId("reimu")].inventory[COIN] == 1
