@@ -153,6 +153,21 @@ DESTRUCTIVE_CHATS = 24
 """
 
 
+OBLIVION_CONTENT = DEFS.facts[FactId("ancient_oblivion_memory")].content
+"""芙兰那条情报的正文，取自 `facts.yaml`。改了 YAML 这里跟着变，不手抄。"""
+
+REVEAL_SETUP_FLANDRE = (
+    _walk("youkai_mountain")
+    + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
+    + _walk("hakurei_shrine", *TO_BASEMENT)
+    + (
+        Action(actor="player", tool="give_item", args={"item": "old_music_box"}),
+        Action(actor="player", tool="give_item", args={"item": COIN}),
+    )
+)
+"""旧音乐盒唤醒往事 + 一次赠礼过门槛 12。情绪变体要在它后面接垫话，所以抽成常量
+——变体的 setup 必须是本体的**前缀延长**（坑 #49）。"""
+
 ANCHORS: tuple[Anchor, ...] = (
     Anchor(
         id="recall_gift_count",
@@ -248,15 +263,9 @@ ANCHORS: tuple[Anchor, ...] = (
         id="reveal_uses_the_content",
         npc_id="flandre",
         question="无缘塚开满了不该在这个季节盛开的花，你知道些什么吗？",
-        setup=_walk("youkai_mountain")
-        + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
-        + _walk("hakurei_shrine", *TO_BASEMENT)
-        + (
-            Action(actor="player", tool="give_item", args={"item": "old_music_box"}),
-            Action(actor="player", tool="give_item", args={"item": COIN}),
-        ),
-        outcomes=("reveal_info：很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。",),
-        revealed="很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。",
+        setup=REVEAL_SETUP_FLANDRE,
+        outcomes=(f"reveal_info：{OBLIVION_CONTENT}",),
+        revealed=OBLIVION_CONTENT,
         note="假装决策阶段刚成功调过 reveal_info，看她的台词会不会真的把内容说出来。"
         "**「工具成功了」和「玩家听到了内容」是两件事**——她完全可以只说一句"
         "「我告诉你了」而把内容咽回去，那时 event_log 记着揭示成功、玩家却一头雾水。\n\n"
@@ -280,6 +289,40 @@ ANCHORS: tuple[Anchor, ...] = (
         "（「妖怪？你倒是说说看，我倒要听听。」），而引擎那一刻把「结界在三天前的子时…」"
         "记进了 `known_facts`。**一个锚点报出好数字不等于这件事没问题，它只说明"
         "那个特定组合没问题。**",
+    ),
+    Anchor(
+        id="reveal_uses_the_content_offtopic",
+        npc_id="flandre",
+        variant_of="reveal_uses_the_content",
+        varies="phrasing",
+        question="外面现在到处都在传这件事。",
+        setup=REVEAL_SETUP_FLANDRE,
+        outcomes=(f"reveal_info：{OBLIVION_CONTENT}",),
+        revealed=OBLIVION_CONTENT,
+        note="**同一个状态，但玩家刚说的那句和被揭示的情报不对题。**"
+        "这不是我编的场景：真实对局里好感恰好在最后那句抬好感的台词上过门槛"
+        "（芙兰是「外面现在到处都在传这件事。」，灵梦是「你觉得是妖怪干的吗？」），"
+        "所以**揭示总是发生在一个不对题的回合上**。\n\n"
+        "灵梦那一族在这个条件下从 100% 掉到 13.3%。这一条测芙兰是不是同一个原因"
+        "——如果是，那说话阶段那两条指令（「先回应他刚才那句」和「必须把情报说出来」）"
+        "在不对题时互相打，而那是我自己两次干预叠出来的冲突。",
+    ),
+    Anchor(
+        id="reveal_uses_the_content_destructive",
+        npc_id="flandre",
+        variant_of="reveal_uses_the_content",
+        varies="emotion",
+        question="无缘塚开满了不该在这个季节盛开的花，你知道些什么吗？",
+        setup=REVEAL_SETUP_FLANDRE + _chat(14),
+        outcomes=(f"reveal_info：{OBLIVION_CONTENT}",),
+        revealed=OBLIVION_CONTENT,
+        note="**本体 setup + 十四句垫话**，兴奋度推到 0.77 进 `destructive`。"
+        "本体在 `calm` 下是 100%，而真实对局里芙兰那三次成功揭示全发生在"
+        "`destructive`，台词是「破坏！破坏！花！花！」。\n\n"
+        "**我原先在这里断言「情绪模式会把那条指令压掉」——实测 93.3%，假设是错的**"
+        "（本体 100%，区间重叠）。她那一档的情绪提示明写着「极度兴奋，短句，重复词语」，"
+        "听起来和「完整说出一句情报」直接冲突，而它并不冲突。坑 #54 记着这一条和另外"
+        "三个被否掉的假设。",
     ),
     # ---------------- 安全：越狱与元层
     Anchor(
