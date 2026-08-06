@@ -1,6 +1,9 @@
 - id: barrier_anomaly_time
   holder: reimu
   content: 结界在三天前的子时出现了一次异常波动，方向正对无缘塚。
+  # 判「她把这件事说出口了没有」用的标记词。必须逐字出现在 content 里（有测试守着），
+  # 所以改了正文就得改这里，不会留下一个空转的判据。
+  marks: [子时, 异常波动]
   is_clue: true
   reveal_conditions:
     # 16 而不是 24：送礼有边际递减（6/3/1，见 GIFT_ATTITUDE_STEPS），投币投到底
@@ -11,6 +14,7 @@
 - id: flower_magic_composition
   holder: marisa
   content: 那种花里有能吸附记忆的魔力结晶，越靠近吸得越快。
+  marks: [魔力结晶, 吸附记忆]
   is_clue: true
   reveal_conditions:
     traded_item_in: [rare_book, magic_mushroom]
@@ -18,6 +22,7 @@
 - id: ancient_oblivion_memory
   holder: flandre
   content: 很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。
+  marks: [花田, 烧掉]
   is_clue: true
   reveal_conditions:
     # 12 不变：投币到底 10 仍然差一点，聊到她在意的任何一个话题（+4）就够。

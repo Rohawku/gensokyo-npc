@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from gensokyo.testkit.trajectory import Trajectory, TurnRecord
 from gensokyo.world.defs import WorldDefs
+from gensokyo.world.ids import FactId
 from gensokyo.world.quest import TIMEOUT_ENDING
 from gensokyo.world.tools import ErrorCode
 
@@ -231,4 +232,51 @@ def failure_turn_count(trajectories: Sequence[Trajectory]) -> int:
         for traj in trajectories
         for turn in traj.turns
         if _turn_self_healed(_paired(turn)) is not None
+    )
+
+
+class RevealDeliveryMetrics(BaseModel):
+    """成功揭示之后，情报内容有没有真的到玩家耳朵里。
+
+    **`reveal_info` 成功只说明工具成功了。** 引擎把情报记进 `known_facts`、面板上
+    「已知线索」多一条，而她那句台词完全可以一个字都不提——玩家于是在整个游戏
+    最重要的一刻听到一句「你倒是说说看，我倒要听听」。
+
+    这是硬判定：分子是「同一回合的台词里出现了该情报的 `marks` 之一」，分母是
+    成功的 `reveal_info` 次数，两边都来自轨迹，没有一处交给模型判断。
+    """
+
+    reveals: int
+    delivered: int
+    by_fact: dict[str, tuple[int, int]]
+    """fact id -> (说出口的次数, 成功揭示的次数)。**按情报拆**：三条线索的持有者
+    是三个不同性格的 NPC，聚合成一个数会把「芙兰从来不说」和「魔理沙偶尔不说」
+    混在一起。"""
+
+    @property
+    def delivery_rate(self) -> float:
+        return _rate(self.delivered, self.reveals)
+
+
+def reveal_delivery_metrics(
+    trajectories: Sequence[Trajectory], defs: WorldDefs
+) -> RevealDeliveryMetrics:
+    by_fact: dict[str, list[int]] = {}
+    for traj in trajectories:
+        for turn in traj.turns:
+            for call, result in _paired(turn):
+                if call.get("tool") != "reveal_info" or not result.get("ok"):
+                    continue
+                fact_id = FactId(str((call.get("args") or {}).get("fact", "")))
+                fact = defs.facts.get(fact_id)
+                if fact is None:
+                    continue
+                said = any(mark in turn.utterance for mark in fact.marks)
+                slot = by_fact.setdefault(fact_id, [0, 0])
+                slot[0] += int(said)
+                slot[1] += 1
+    return RevealDeliveryMetrics(
+        reveals=sum(v[1] for v in by_fact.values()),
+        delivered=sum(v[0] for v in by_fact.values()),
+        by_fact={k: (v[0], v[1]) for k, v in sorted(by_fact.items())},
     )

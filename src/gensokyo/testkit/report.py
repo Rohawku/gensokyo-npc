@@ -12,9 +12,11 @@ from collections.abc import Sequence
 from pydantic import BaseModel, Field
 
 from gensokyo.testkit.metrics.hard import (
+    RevealDeliveryMetrics,
     TaskMetrics,
     ToolMetrics,
     failure_turn_count,
+    reveal_delivery_metrics,
     task_metrics,
     tool_metrics,
 )
@@ -95,6 +97,7 @@ class EvalReport(BaseModel):
     persona: PersonaMetrics
     memory: MemoryMetrics
     playability: PlayabilityMetrics
+    reveal_delivery: RevealDeliveryMetrics
     total_llm_calls: int
     total_persona_llm_calls: int
     mean_latency_ms: float
@@ -219,7 +222,25 @@ def _hard_section(report: EvalReport) -> list[str]:
     ]
     lines += [f"| `{fact}` | {_pct(rate)} |" for fact, rate in task.clue_rate.items()]
 
+    delivery = report.reveal_delivery
     lines += [
+        "",
+        "### 情报有没有真的说出口（硬判定）",
+        "",
+        "**`reveal_info` 成功只说明工具成功了。** 引擎把情报记进 `known_facts`、面板上"
+        "「已知线索」多一条，而她那句台词完全可以一个字都不提——玩家于是在整个游戏"
+        "最重要的一刻听到一句「你倒是说说看，我倒要听听」。判据是情报在 `facts.yaml` 里"
+        "声明的 `marks` 有没有出现在同一回合的台词里。",
+        "",
+        "| 指标 | 值 | 分母 |",
+        "|---|---|---|",
+        f"| **揭示内容到达率** | {_pct(delivery.delivery_rate)} | {delivery.reveals} 次成功揭示 |",
+        "",
+        "按情报拆（三条线索的持有者是三个不同性格的 NPC，聚合会把「谁从来不说」盖掉）：",
+        "",
+        "| 线索 | 说出口 / 成功揭示 |",
+        "|---|---|",
+        *(f"| `{fid}` | {said}/{tot} |" for fid, (said, tot) in delivery.by_fact.items()),
         "",
         "### 工具调用",
         "",
@@ -532,6 +553,7 @@ def evaluate(trajectories: Sequence[Trajectory], defs: WorldDefs) -> EvalReport:
         persona=persona_metrics(trajectories, defs),
         memory=memory_metrics(trajectories, defs),
         playability=playability_metrics(trajectories),
+        reveal_delivery=reveal_delivery_metrics(trajectories, defs),
         total_llm_calls=sum(t.llm_calls for traj in trajectories for t in traj.turns),
         total_persona_llm_calls=sum(
             t.persona_llm_calls for traj in trajectories for t in traj.turns

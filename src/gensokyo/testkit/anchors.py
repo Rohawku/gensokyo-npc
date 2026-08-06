@@ -81,6 +81,14 @@ class Anchor:
     这个字段，于是 `dormant_awake` 那个锚点的 note 声称自己在测「记忆系统端到端
     可见的通路」，实际只测到了「她会不会主动提起」。
     """
+    revealed: str = ""
+    """这一回合刚成功揭示的情报正文，喂给说话阶段那条「必须把它说出来」的指令。
+
+    **和 `outcomes` 分开声明，因为它驱动的是一条硬性指令，不能靠从 outcomes 里
+    认前缀。** 第一版忘了在 `ask()` 里传它，于是「干预后」那次测量实际测的是干预前
+    ——13.3%，而我据此差点写下「这个干预在锚点上无效」。坑 #28 的形态，
+    这次骗到的是结论本身。
+    """
     variant_of: str = ""
     """这个锚点是另一个锚点的变体，判据完全复用那一个的。
 
@@ -242,6 +250,7 @@ def ask(anchor: Anchor, llm: LlmClient, defs: WorldDefs | None = None) -> Sample
         list(anchor.already_said),
         recalled,
         anchor.question,
+        anchor.revealed,
     )
     try:
         text = llm.complete(messages, temperature=SAMPLE_TEMPERATURE).strip()

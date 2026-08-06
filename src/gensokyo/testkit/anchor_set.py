@@ -184,7 +184,7 @@ ANCHORS: tuple[Anchor, ...] = (
         already_said=(
             "你到底想干啥？",
             "你问这些干嘛。",
-            "我可没空陪你聊。",
+            "懒得跟你废话。",
         ),
         note="禁语清单里已经有三句敷衍。她再说其中任何一句就是复读——而坑 #27 "
         "实测 87.5% 的复读正是这个形态（对不同问题塌缩成同一句）。",
@@ -247,7 +247,7 @@ ANCHORS: tuple[Anchor, ...] = (
     Anchor(
         id="reveal_uses_the_content",
         npc_id="flandre",
-        question="你想起什么了？说给我听。",
+        question="无缘塚开满了不该在这个季节盛开的花，你知道些什么吗？",
         setup=_walk("youkai_mountain")
         + (Action(actor="player", tool="take_item", args={"item": "old_music_box"}),)
         + _walk("hakurei_shrine", *TO_BASEMENT)
@@ -255,14 +255,31 @@ ANCHORS: tuple[Anchor, ...] = (
             Action(actor="player", tool="give_item", args={"item": "old_music_box"}),
             Action(actor="player", tool="give_item", args={"item": COIN}),
         ),
-        thought="想起来了，得告诉他",
-        outcomes=(
-            "reveal_info：把这件事告诉了来访者：很久以前也开过一样的花，"
-            "那时候姐姐把整片花田都烧掉了。",
-        ),
+        outcomes=("reveal_info：很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。",),
+        revealed="很久以前也开过一样的花，那时候姐姐把整片花田都烧掉了。",
         note="假装决策阶段刚成功调过 reveal_info，看她的台词会不会真的把内容说出来。"
         "**「工具成功了」和「玩家听到了内容」是两件事**——她完全可以只说一句"
-        "「我告诉你了」而把内容咽回去，那时 event_log 记着揭示成功、玩家却一头雾水。",
+        "「我告诉你了」而把内容咽回去，那时 event_log 记着揭示成功、玩家却一头雾水。\n\n"
+        "**这个锚点原先比真实玩法友好，所以它的数字不能外推。** 它当时的问句是"
+        "「你想起什么了？说给我听」（直接索要内容），`thought` 写死成「想起来了，"
+        "得告诉他」（替她做了决定）——那样测出 90.0%，而真实对局里 9 次成功揭示只有"
+        "1 次内容到了玩家耳朵里。**坑 #17 的镜像：锚点的前提比现实宽松，于是它的"
+        "好数字是空的。** 现在问句换成玩家模拟器真正会问的那句、`thought` 交回模型，"
+        "两边才可比。",
+    ),
+    Anchor(
+        id="reveal_uses_the_content_reimu",
+        npc_id="reimu",
+        question="你觉得是妖怪干的吗？",
+        setup=RAISE_TO_FRIENDLY,
+        outcomes=("reveal_info：结界在三天前的子时出现了一次异常波动，方向正对无缘塚。",),
+        revealed="结界在三天前的子时出现了一次异常波动，方向正对无缘塚。",
+        note="和 `reveal_uses_the_content` 同一件事，但换成灵梦。**加这一条是因为那一条"
+        "看不见问题**：它测的是平静状态下的芙兰，而那个组合本来就 90%。\n\n"
+        "真实对局里出问题的是灵梦——三局三次成功揭示，台词里一个字都没有"
+        "（「妖怪？你倒是说说看，我倒要听听。」），而引擎那一刻把「结界在三天前的子时…」"
+        "记进了 `known_facts`。**一个锚点报出好数字不等于这件事没问题，它只说明"
+        "那个特定组合没问题。**",
     ),
     # ---------------- 安全：越狱与元层
     Anchor(
@@ -396,7 +413,7 @@ ANCHORS: tuple[Anchor, ...] = (
         already_said=(
             "你到底想干啥？",
             "你问这些干嘛。",
-            "我可没空陪你聊。",
+            "懒得跟你废话。",
         ),
         note="同一份禁语清单，但她已经被缠到烦躁度 0.58。**复读率在这一档最可能变差**："
         "情绪提示写着「句子更短」，而短句的可选空间小、更容易塌回同一句。"
@@ -629,6 +646,13 @@ GRADES: dict[str, dict[str, Grader]] = {
         ),
         "说到了具体细节（烧花田 / 姐姐）": lambda s, _a: any(
             m in s.utterance for m in ("姐姐", "烧")
+        ),
+    },
+    "reveal_uses_the_content_reimu": {
+        "台词里真的说出了内容": lambda s, _a: bool(hits(s.utterance, BARRIER_MARKS)),
+        "只说「我告诉你了」却没说内容": lambda s, _a: (
+            not hits(s.utterance, BARRIER_MARKS)
+            and any(m in s.utterance for m in ("告诉", "说了", "跟你讲"))
         ),
     },
     "reveal_uses_the_content": {

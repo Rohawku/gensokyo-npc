@@ -11,7 +11,13 @@ from factories import (
     say_turn,
 )
 
-from gensokyo.testkit.metrics.hard import failure_turn_count, task_metrics, tool_metrics
+from gensokyo.testkit.metrics.hard import (
+    failure_turn_count,
+    reveal_delivery_metrics,
+    task_metrics,
+    tool_metrics,
+)
+from gensokyo.testkit.trajectory import TurnRecord
 
 DEFS = defs()
 
@@ -315,3 +321,75 @@ def test_self_heal_denominator_is_failing_turns_not_all_turns() -> None:
 
     assert failure_turn_count(batch) == 1
     assert tool_metrics(batch).self_heal_rate == 1.0
+
+
+# ------------------------------------------------- 情报有没有真的说出口
+
+
+def test_every_clue_declares_marks_that_really_appear_in_its_content() -> None:
+    """`marks` 逐字取自 `content`。抄错一个字就留下一个永远不命中的判据——
+    而它会报出一个漂亮的 0%（类 1 的形态：写了但从来不生效）。"""
+    for fact in DEFS.facts.values():
+        if not fact.is_clue:
+            continue
+        assert fact.marks, f"{fact.id} 是线索却没声明 marks"
+        for mark in fact.marks:
+            assert mark in fact.content, f"{fact.id} 的 marks 里「{mark}」不在正文里"
+
+
+def _episode(turn: TurnRecord):
+    return episode([turn])
+
+
+def _reveal_turn(npc: str, fact: str, utterance: str) -> TurnRecord:
+    return TurnRecord(
+        tick=1,
+        player_input="你知道些什么吗",
+        kind="say",
+        npc_id=npc,
+        utterance=utterance,
+        tool_calls=[{"tool": "reveal_info", "args": {"fact": fact}}],
+        tool_results=[{"ok": True, "error_code": None, "observation": "说了"}],
+    )
+
+
+def test_a_reveal_whose_utterance_omits_the_content_is_not_delivered() -> None:
+    """**这一格是为一次真实缺陷补的。** 实测 9 次成功揭示里只有 1 次台词里有情报：
+    她说「妖怪？你倒是说说看，我倒要听听。」，而引擎那一刻把「结界在三天前的子时
+    出现了一次异常波动」记进了 `known_facts`。工具成功 ≠ 玩家听到了。
+    """
+    said = _reveal_turn("reimu", "barrier_anomaly_time", "结界在子时抖过一下，方向正对无缘塚。")
+    mute = _reveal_turn("reimu", "barrier_anomaly_time", "妖怪？你倒是说说看，我倒要听听。")
+
+    m = reveal_delivery_metrics([_episode(said), _episode(mute)], DEFS)
+
+    assert m.reveals == 2
+    assert m.delivered == 1
+    assert m.delivery_rate == 0.5
+    assert m.by_fact["barrier_anomaly_time"] == (1, 2)
+
+
+def test_a_failed_reveal_is_not_in_the_denominator() -> None:
+    """门槛没开时她说不出来，那不是「没说出口」，是压根没揭示成功。
+    混进分母会让这个比率随门槛难度变化。"""
+    turn = _reveal_turn("reimu", "barrier_anomaly_time", "我可不知道。")
+    turn.tool_results = [{"ok": False, "error_code": "reveal_condition_unmet", "observation": "x"}]
+
+    m = reveal_delivery_metrics([_episode(turn)], DEFS)
+
+    assert m.reveals == 0
+    assert m.delivery_rate == 0.0
+
+
+def test_delivery_is_split_by_fact() -> None:
+    """三条线索的持有者是三个不同性格的 NPC。聚合成一个数会把「芙兰从来不说」
+    和「魔理沙偶尔不说」混在一起——而前者是角色问题，后者是采样波动。"""
+    batch = [
+        _episode(_reveal_turn("marisa", "flower_magic_composition", "那花里有魔力结晶。")),
+        _episode(_reveal_turn("flandre", "ancient_oblivion_memory", "破坏！破坏！")),
+    ]
+
+    m = reveal_delivery_metrics(batch, DEFS)
+
+    assert m.by_fact["flower_magic_composition"] == (1, 1)
+    assert m.by_fact["ancient_oblivion_memory"] == (0, 1)

@@ -52,6 +52,12 @@ class _Decided:
     results: list[ActionResult]
     outcomes: list[str]
     llm_calls: int
+    revealed: str = ""
+    """本回合成功揭示的情报正文。空串表示这回合没揭示成功。
+
+    单独拎出来而不是让说话阶段去 `outcomes` 里认——认字符串前缀是一种会漂移的
+    耦合，而这一段要驱动一条**硬性指令**（「必须把它说出来」），不能靠猜。
+    """
 
 
 def _no_action() -> _Decided:
@@ -118,8 +124,25 @@ def _decide(
         errors = step_errors
 
     return _Decided(
-        decision=decision, issued=issued, results=results, outcomes=outcomes, llm_calls=calls
+        decision=decision,
+        issued=issued,
+        results=results,
+        outcomes=outcomes,
+        llm_calls=calls,
+        revealed=_revealed_content(issued, results),
     )
+
+
+def _revealed_content(issued: list[Action], results: list[ActionResult]) -> str:
+    """本回合成功揭示的情报正文，取自工具结果的 `observation_delta`。
+
+    引擎在 `_do_reveal_info` 成功时把情报正文原样放进 `observation_delta`，所以这里
+    不需要再查一遍 `facts.yaml`——**一处定义两处使用**，改了情报内容这里跟着变。
+    """
+    for action, result in zip(issued, results, strict=False):
+        if action.tool == "reveal_info" and result.ok:
+            return result.observation_delta
+    return ""
 
 
 def _speak(
@@ -133,6 +156,7 @@ def _speak(
     spoken: list[str],
     recalled: list[str],
     asked: str,
+    revealed: str,
     on_chunk: Callable[[str], None] | None,
 ) -> str:
     """阶段二：看着实际结果说一句话，逐块流给调用方。
@@ -151,6 +175,7 @@ def _speak(
         spoken[-BAN_WINDOW:],
         recalled,
         asked,
+        revealed,
     )
 
     pieces: list[str] = []
@@ -212,6 +237,7 @@ def run_turn(
         spoken or [],
         recalled or [],
         asked,
+        decided.revealed,
         on_chunk,
     )
     calls = decided.llm_calls + 1

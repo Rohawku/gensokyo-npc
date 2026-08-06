@@ -85,6 +85,7 @@ def build_speak_messages(
     recent_own: list[str] | None = None,
     recalled: list[str] | None = None,
     asked: str = "",
+    revealed: str = "",
 ) -> list[Msg]:
     """说话阶段只带**必要**的上下文，不是最少的上下文。
 
@@ -107,6 +108,12 @@ def build_speak_messages(
 
     主动开口（`Session._volunteer`）时 `asked` 为空，那一段整块不出现：她那时
     确实不是在回答任何话。
+
+    `revealed` 是她这一回合刚成功揭示的情报正文。**它和 `outcomes` 里那一行是
+    同一句，重复一遍同样是刻意的**——`outcomes` 是一句事实陈述（「reveal_info：
+    把这件事告诉了来访者：……」），而实测她看到它之后台词里一个字都不提：9 次成功
+    揭示只有 1 次内容真的到了玩家耳朵里，其中一次她还自己编了个不同的解释。
+    这是坑 #2 那条方法论的第六次应用：**陈述事实不够，得直接说该做什么。**
     """
     body = (
         _env()
@@ -119,6 +126,7 @@ def build_speak_messages(
             recent_own=recent_own or [],
             recalled=recalled or [],
             asked=asked,
+            revealed=revealed,
         )
     )
     return [

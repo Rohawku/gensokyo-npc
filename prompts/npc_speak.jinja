@@ -13,6 +13,10 @@
 【你刚才做了什么，结果如何】
 {% if outcomes %}{% for line in outcomes %}- {{ line }}
 {% endfor %}{% else %}你什么也没做。
+{% endif %}{% if revealed %}
+你刚才决定把这件事告诉他：{{ revealed }}
+**这句话里必须把它说出来**，用你自己的说法，但那几个关键的字不能漏。
+只说「我告诉你了」「你自己想想」不算——他听不到内容就等于你没说。
 {% endif %}
 {% if recalled %}
 【你还记得的事】

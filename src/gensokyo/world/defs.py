@@ -206,6 +206,17 @@ class FactDef(StrictModel):
     id: FactId
     holder: NpcId
     content: str
+    marks: list[str] = Field(default_factory=list)
+    """判「她把这条情报说出口了没有」用的标记词，逐字取自 `content`。
+
+    **放在 YAML 而不是判据代码里**：它是内容，和情报正文一起改才不会漂移。
+    有测试断言每个标记都真的出现在 `content` 里——手抄一个错别字会留下一个
+    永远不命中的判据（类 1 的形态）。
+
+    为什么需要它：`reveal_info` 成功只说明**工具**成功了，不说明玩家听到了内容。
+    实测 9 次成功揭示里只有 1 次台词里真的有情报（其中一次她还自己编了个
+    不同的解释，而引擎记录着真情报已送达）。
+    """
     reveal_conditions: RevealConditions = Field(default_factory=RevealConditions)
     is_clue: bool = False
 

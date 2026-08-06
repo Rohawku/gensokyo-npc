@@ -534,11 +534,21 @@ def test_no_anchor_setup_touches_a_topic_by_accident() -> None:
     这一条比上面那条强：填充句干净不代表整条 setup 干净，`_says(...)` 那些
     也可能撞上话题表。
     """
+    from gensokyo.testkit.anchor_set import RAISE_TO_FRIENDLY
+
+    on_purpose = {str(a.args.get("text", "")) for a in RAISE_TO_FRIENDLY if a.tool == "say"}
+
     for anchor in ANCHORS:
         npc = NpcId(anchor.npc_id)
         touched = stage(anchor, DEFS)[0].state.npcs[npc].discussed_topics
-        if "friendly" in anchor.id:
-            assert touched, f"{anchor.id} 声称用话题抬好感，实际一个都没命中"
+        # 放行条件按 setup **真的包含**抬好感那几句来判，不是按 id 里有没有
+        # 「friendly」——第一版是后者，于是新加一个用 RAISE_TO_FRIENDLY 的锚点
+        # 就红了，而它没有任何问题。**判据不该靠命名约定。**
+        uses_topic_lines = any(
+            a.tool == "say" and str(a.args.get("text", "")) in on_purpose for a in anchor.setup
+        )
+        if uses_topic_lines:
+            assert touched, f"{anchor.id} 用了抬好感的话题句，却一个都没命中"
             continue
         assert not touched, f"{anchor.id} 意外聊到了话题 {touched}——召回块会多一条指令"
 
@@ -590,7 +600,10 @@ def test_no_setup_utterance_contains_a_word_the_judges_look_for() -> None:
     words = _detector_words()
 
     for anchor in ANCHORS:
-        said = [str(a.args.get("text", "")) for a in anchor.setup if a.tool == "say"]
-        for text in said:
+        # `history` 和 `already_said` 也是模型输入，她照样会复述——只查 setup
+        # 等于漏掉一半（这一条是给 reveal_uses_the_content_reimu 填 history 时补的）。
+        texts = [str(a.args.get("text", "")) for a in anchor.setup if a.tool == "say"]
+        texts += list(anchor.history) + list(anchor.already_said)
+        for text in texts:
             bad = sorted(w for w in words if w in text)
-            assert not bad, f"{anchor.id} 的 setup 发言「{text}」含判据词：{bad}"
+            assert not bad, f"{anchor.id} 的输入「{text}」含判据词：{bad}"

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from gensokyo.agent.npc import NpcAgent
@@ -440,3 +441,80 @@ def _decide() -> str:
     import json as _json
 
     return _json.dumps({"thought": "…", "tool_calls": []}, ensure_ascii=False)
+
+
+def test_a_successful_reveal_becomes_an_order_to_say_it_out_loud() -> None:
+    """**`outcomes` 那一行是事实陈述，实测她看完一个字都不提。**
+
+    9 次成功揭示只有 1 次内容真的到了玩家耳朵里——其中一次她还自己编了个不同的
+    解释（「那种花啊，是住在那边的妖怪种的」），而引擎那一刻把真情报记进了
+    `known_facts`。工具成功 ≠ 玩家听到了，而拿到线索是整个游戏最重要的一刻。
+
+    坑 #2 那条方法论的第六次应用：陈述事实不够，得直接说该做什么。
+    """
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+    content = "结界在三天前的子时出现了一次异常波动，方向正对无缘塚。"
+
+    user = build_speak_messages(
+        card,
+        eng.observe(NpcId("reimu")),
+        ["玩家：你知道些什么吗"],
+        "想想",
+        [f"reveal_info：把这件事告诉了来访者：{content}"],
+        revealed=content,
+    )[-1].content
+
+    assert "必须把它说出来" in user
+    assert "他听不到内容就等于你没说" in user
+    assert user.count("子时") == 2  # outcomes 一次，指令一次——重复是刻意的
+
+
+def test_a_turn_without_a_reveal_carries_no_such_order() -> None:
+    """没揭示成功的回合不该出现这段指令——它会让她去说一件她还不该说的事，
+    而那正是信息控制要挡的。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(
+        card, eng.observe(NpcId("reimu")), ["玩家：你知道些什么吗"], "想想", []
+    )[-1].content
+
+    assert "必须把它说出来" not in user
+
+
+def test_the_revealed_content_reaches_the_speak_prompt_through_the_policy() -> None:
+    """**测通路。** `revealed` 走 `_decide` → `_Decided` → `_speak` → 模板，
+    中间任何一环漏掉，模板那一段就永远是空的而 654 个测试全绿（坑 #28 的形态）。
+
+    这里让她真的成功揭示一次：好感先推过门槛，否则 `reveal_info` 会被引擎拦掉，
+    而那时 `revealed` 本来就该是空的——测不到这条通路。
+    """
+    eng = _engine()
+    for _ in range(3):
+        eng.apply(Action(actor="player", tool="give_item", args={"item": "offering_coin"}))
+    for line in ("这场异变闹得挺大。", "妖怪最近多不多。"):
+        eng.apply(Action(actor="player", tool="say", args={"text": line}))
+
+    llm = ScriptedLlmClient(
+        [
+            json.dumps(
+                {
+                    "thought": "…",
+                    "tool_calls": [
+                        {"tool": "reveal_info", "args": {"fact": "barrier_anomaly_time"}}
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            "结界那事……算你问对人了。",
+        ]
+    )
+    agent = NpcAgent(card=eng.defs.characters[NpcId("reimu")], engine=eng, llm=llm)
+
+    turn = agent.act("结界最近是不是出问题了？")
+
+    assert turn.tool_results[0].ok, "前提不成立：这一次揭示没成功"
+    speak_prompt = llm.calls[-1][-1].content
+    assert "必须把它说出来" in speak_prompt
+    assert "子时" in speak_prompt.split("必须把它说出来")[0].rsplit("你刚才决定", 1)[1]
