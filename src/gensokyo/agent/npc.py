@@ -65,7 +65,9 @@ class NpcAgent:
         )
 
     def act(self, player_utterance: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
-        return self._turn(f"玩家：{player_utterance}", player_utterance, on_chunk)
+        return self._turn(
+            f"玩家：{player_utterance}", player_utterance, on_chunk, asked=player_utterance
+        )
 
     def react(self, deed: str, on_chunk: Callable[[str], None] | None = None) -> NpcTurn:
         """玩家**做了**一件事而不是说了一句话，她主动开口。
@@ -85,6 +87,7 @@ class NpcAgent:
         query: str,
         on_chunk: Callable[[str], None] | None,
         *,
+        asked: str = "",
         speech_only: bool = False,
     ) -> NpcTurn:
         # 先不写入 history。若 run_turn 抛异常（本地端点超时、限流），
@@ -101,6 +104,7 @@ class NpcAgent:
             self.spoken,
             render_recall(recalled),
             on_chunk,
+            asked=asked,
             speech_only=speech_only,
         )
         turn.retrieved_memory_ids = [s.item.id for s in recalled]

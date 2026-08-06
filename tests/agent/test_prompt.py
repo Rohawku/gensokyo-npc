@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from gensokyo.agent.npc import NpcAgent
 from gensokyo.agent.prompt import build_decide_messages, build_speak_messages
+from gensokyo.llm.client import ScriptedLlmClient
 from gensokyo.world.engine import WorldEngine
 from gensokyo.world.ids import ItemId, NpcId
 from gensokyo.world.loader import load_defs
@@ -371,3 +373,70 @@ def test_the_recall_block_gives_an_instruction_not_only_a_prohibition() -> None:
     for text in (speak, decide):
         assert "说出来" in text
         assert "别编" in text
+
+
+def test_the_speak_prompt_names_the_line_she_should_answer() -> None:
+    """**她回答的是召回块里的旧发言，不是当前问句。**
+
+    锚点实测：问「结界最近是不是出问题了」，30 次里 26 次她在回应 setup 里那句
+    填充发言（「你在这儿站会儿是不是觉得无聊？」）。历史是一段平铺的对话，模型
+    没有理由认为最后一行比【你还记得的事】更重要——而召回块里那些条目还带着
+    「我对这个上心」这种语气。
+
+    所以把玩家刚说的那句单独拎出来，紧挨着「现在说话」，并直说「先回应他刚才
+    那句」。坑 #2 那条方法论：陈述事实不够，得说该做什么。
+    """
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(
+        card,
+        eng.observe(NpcId("reimu")),
+        ["玩家：结界最近是不是出问题了？"],
+        "想想",
+        [],
+        asked="结界最近是不是出问题了？",
+    )[-1].content
+
+    assert "【他刚才对你说的是】" in user
+    assert "先回应他刚才那句话" in user
+    # 那一段必须在【你还记得的事】之后——它的作用是压过召回块，位置是它的一半。
+    assert user.index("【他刚才对你说的是】") > user.index("【当前场景】")
+
+
+def test_a_volunteered_line_has_no_question_to_answer() -> None:
+    """主动开口时玩家没说话（他敲的是 `/give`）。那一段整块不出现——留一个空的
+    「他刚才对你说的是」会让她去回应一句不存在的话。"""
+    eng = _engine()
+    card = eng.defs.characters[NpcId("reimu")]
+
+    user = build_speak_messages(
+        card, eng.observe(NpcId("reimu")), ["（来访者把赛钱交给了你）"], "想想", []
+    )[-1].content
+
+    assert "【他刚才对你说的是】" not in user
+    assert "先回应他刚才那句话" not in user
+
+
+def test_the_players_line_reaches_the_speak_prompt_through_the_agent() -> None:
+    """**这条测的是通路，不是模板。** 坑 #28 的教训：记忆和「给过你什么」都只
+    接到了决策阶段，于是台词是在看不到它们的情况下生成的——机制装上了不等于
+    内容送到了。`asked` 走 NpcAgent → run_turn → _speak → 模板，中间任何一环
+    漏掉，模板里那一段就永远是空的，而 651 个测试全绿。
+    """
+    eng = _engine()
+    llm = ScriptedLlmClient([_decide(), "哼。"])
+    agent = NpcAgent(card=eng.defs.characters[NpcId("reimu")], engine=eng, llm=llm)
+
+    agent.act("结界最近是不是出问题了？")
+
+    speak_prompt = llm.calls[-1][-1].content
+    assert "【他刚才对你说的是】" in speak_prompt
+    assert "结界最近是不是出问题了？" in speak_prompt.split("【他刚才对你说的是】")[1]
+
+
+def _decide() -> str:
+    """一条「什么也不做」的决策 JSON。说话阶段的通路测试只关心第二次调用。"""
+    import json as _json
+
+    return _json.dumps({"thought": "…", "tool_calls": []}, ensure_ascii=False)

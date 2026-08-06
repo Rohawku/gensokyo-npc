@@ -241,6 +241,7 @@ def ask(anchor: Anchor, llm: LlmClient, defs: WorldDefs | None = None) -> Sample
         list(anchor.outcomes),
         list(anchor.already_said),
         recalled,
+        anchor.question,
     )
     try:
         text = llm.complete(messages, temperature=SAMPLE_TEMPERATURE).strip()

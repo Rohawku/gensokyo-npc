@@ -132,6 +132,7 @@ def _speak(
     outcomes: list[str],
     spoken: list[str],
     recalled: list[str],
+    asked: str,
     on_chunk: Callable[[str], None] | None,
 ) -> str:
     """阶段二：看着实际结果说一句话，逐块流给调用方。
@@ -149,6 +150,7 @@ def _speak(
         outcomes,
         spoken[-BAN_WINDOW:],
         recalled,
+        asked,
     )
 
     pieces: list[str] = []
@@ -175,6 +177,7 @@ def run_turn(
     recalled: list[str] | None = None,
     on_chunk: Callable[[str], None] | None = None,
     *,
+    asked: str = "",
     speech_only: bool = False,
 ) -> NpcTurn:
     """两阶段回合：先决策（短 JSON），再说话（流式散文）。
@@ -208,6 +211,7 @@ def run_turn(
         decided.outcomes,
         spoken or [],
         recalled or [],
+        asked,
         on_chunk,
     )
     calls = decided.llm_calls + 1

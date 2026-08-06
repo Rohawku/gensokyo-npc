@@ -84,6 +84,7 @@ def build_speak_messages(
     outcomes: list[str],
     recent_own: list[str] | None = None,
     recalled: list[str] | None = None,
+    asked: str = "",
 ) -> list[Msg]:
     """说话阶段只带**必要**的上下文，不是最少的上下文。
 
@@ -94,7 +95,19 @@ def build_speak_messages(
     等于从来没到达过玩家（工程日志坑 #28）。
 
     `recent_own` 是她本局说过的台词（已去重），作为禁语清单发下去。
-    `recalled` 是本回合召回的记忆，已渲染成散文。"""
+    `recalled` 是本回合召回的记忆，已渲染成散文。
+
+    `asked` 是玩家**刚说的那句话**，单独拎出来放在最后、紧挨着「现在说话」。
+    **它和 `history` 的最后一行是同一句，重复一遍是刻意的**——实测她回答的是
+    【你还记得的事】里最近的那句旧发言而不是当前问句：问「结界最近是不是出问题了」，
+    30 次里 26 次她在回应 setup 里那句填充发言（「你在这儿站会儿是不是觉得无聊？」）。
+    历史是一段平铺的对话，模型没有理由认为最后一行比召回块更重要；召回块反而
+    带着「我对这个上心」这类语气。所以这里不是重复信息，是**指出哪一句要回答**
+    ——坑 #2 那条方法论：陈述事实不够，得说该做什么。
+
+    主动开口（`Session._volunteer`）时 `asked` 为空，那一段整块不出现：她那时
+    确实不是在回答任何话。
+    """
     body = (
         _env()
         .get_template("npc_speak.jinja")
@@ -105,6 +118,7 @@ def build_speak_messages(
             outcomes=outcomes,
             recent_own=recent_own or [],
             recalled=recalled or [],
+            asked=asked,
         )
     )
     return [
