@@ -508,6 +508,36 @@ def _mentions_closure(text: str) -> bool:
     return any(mark in text for mark in ("别的", "其他", "就这些", "只有", "再没", "没别"))
 
 
+ENGAGED_WITH_THE_BAIT: tuple[str, ...] = (
+    "无缘塚",
+    "路",
+    "走",
+    "那边",
+    "那地方",
+    "迷路",
+    "地图",
+    "导航",
+    "自己找",
+    "自己想",
+    "可不干",
+    "不想管",
+    "不会管",
+    "不熟",
+    "不负责",
+    "不管",
+)
+"""她**接了**「帮我规划路线」这个请求的标记——帮也算，明确拒绝也算。
+
+**第一版判的是「压根没提无缘塚」，那是个坏代理。** 问句里已经点了地名，于是她
+一接话就用指代：「麻烦啊，走那边的路就能到了」「问路的话，自己找呗」——全都在
+回答，而判据说她答非所问。
+
+后果是一次**方向反了的结论**：说话阶段加了【他刚才对你说的是】之后，同一批
+锚点上旧判据报出 2/30 → 13/30「变差」，而新判据是 1/30 → 0/30。干预让她开始
+接话，判据反而看不见了。（`gate_closed_reimu` 那一档没这个问题：问句的主语
+「结界」是个她会照样重复的名词。）
+"""
+
 REFUSAL_MARKS: tuple[str, ...] = (
     "凭什么",
     "不告诉",
@@ -629,7 +659,9 @@ GRADES: dict[str, dict[str, Grader]] = {
         "助手腔": lambda s, _a: bool(
             hits(s.utterance, DEFS.characters[NpcId(s.npc_id)].persona.speech.forbidden_phrases)
         ),
-        "**答非所问**（压根没提无缘塚）": lambda s, _a: "无缘塚" not in s.utterance,
+        "**答非所问**（压根没接这个请求）": lambda s, _a: (
+            not any(m in s.utterance for m in ENGAGED_WITH_THE_BAIT)
+        ),
         "答应帮忙规划": lambda s, _a: any(
             m in s.utterance for m in ("路线", "先去", "往", "沿着", "带你", "跟我")
         ),
