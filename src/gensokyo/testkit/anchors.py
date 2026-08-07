@@ -26,6 +26,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel
 
@@ -197,6 +198,61 @@ class AnchorRun:
 
 def _load(defs: WorldDefs | None = None) -> WorldDefs:
     return defs or load_defs(REPO_ROOT / "scenario", REPO_ROOT / "characters")
+
+
+class Confounded(AssertionError):
+    """两臂差了不止一个变量。消融的两臂只许差一处，否则区间分离也归不了因。"""
+
+
+def assert_one_variable_apart(
+    left: Anchor,
+    right: Anchor,
+    defs: WorldDefs,
+    *,
+    expect: str | set[str],
+) -> None:
+    """断言两个锚点在被观察到的状态上**只差 `expect` 声明的那些维度**。
+
+    维度：`attitude` / `emotion` / `mode` / `recall` / `question` / `history`。
+
+    **`expect` 允许多个维度，是因为这个引擎里有些变量无法独立操纵**——把它写成
+    一个集合是「显式承认这处混淆」，而不是「放宽检查」：情绪只能靠送礼或说话推，
+    两者都会改写召回块，所以「只改情绪」的锚点变体做不出来（同理：好感只能靠
+    送礼和话题涨，所以高好感必然伴随相应的记忆条目）。声明成
+    `expect={"emotion", "recall"}` 之后，**哪天有了别的推情绪的手段，这条断言
+    会因为「差得比声明的少」而红**，提醒你去收紧。
+
+    **这个函数是为一次真实的归因失败补的。** 我写了个一次性消融脚本比较
+    「她记忆里有那段往事」和「没有」，测出 100.0% 对 33.3%、区间完全分离，
+    据此做了修法——而修法零效果（坑 #54）。回头看那两臂：「有音乐盒」那臂是
+    `calm`，「无音乐盒」那臂被垫话推成了 `destructive`。**两个变量混在一起了。**
+
+    锚点变体那条纪律（坑 #49：「新的 = 旧的 + 增量」）有测试守着，而随手写的
+    消融脚本没有——于是同一个错在没有测试的地方又犯了一次。所以把它做成一个
+    **可调用的断言**：消融脚本自己 assert 一次，就不用靠人记得。
+    """
+    dims: dict[str, object] = {}
+    for name, anchor in (("left", left), ("right", right)):
+        engine, recalled = stage(anchor, defs)
+        npc = engine.state.npcs[NpcId(anchor.npc_id)]
+        dims[name] = {
+            "attitude": npc.attitude,
+            "emotion": round(npc.emotion, 2),
+            "mode": npc.mode,
+            "recall": tuple(recalled),
+            "question": anchor.question,
+            "history": tuple(anchor.history),
+        }
+
+    a = cast(dict[str, object], dims["left"])
+    b = cast(dict[str, object], dims["right"])
+    differ = sorted(k for k in a if a[k] != b[k])
+    # 情绪变了必然带着模式变，反过来不成立——把它们算成同一处差别。
+    if {"emotion", "mode"} <= set(differ):
+        differ = [k for k in differ if k != "mode"]
+    wanted = {expect} if isinstance(expect, str) else set(expect)
+    if set(differ) != wanted:
+        raise Confounded(f"两臂本该只差 {sorted(wanted)}，实际差了 {differ}；左 {a}，右 {b}")
 
 
 def stage(anchor: Anchor, defs: WorldDefs) -> tuple[WorldEngine, list[str]]:

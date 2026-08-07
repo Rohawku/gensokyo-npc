@@ -1,11 +1,22 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from gensokyo.agent.schema import normalize_utterance
 from gensokyo.llm.client import ScriptedLlmClient
-from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, FILLER, GRADES, grade
-from gensokyo.testkit.anchors import Anchor, Rate, Sample, ask, collapse_pairs, run, stage
+from gensokyo.testkit.anchor_set import ANCHORS, BY_ID, FILLER, GRADES, _chat, grade
+from gensokyo.testkit.anchors import (
+    Anchor,
+    Confounded,
+    Rate,
+    Sample,
+    ask,
+    assert_one_variable_apart,
+    collapse_pairs,
+    run,
+    stage,
+)
 from gensokyo.world.ids import FactId, NpcId
 from gensokyo.world.loader import load_defs
 from gensokyo.world.tools import Action
@@ -607,3 +618,54 @@ def test_no_setup_utterance_contains_a_word_the_judges_look_for() -> None:
         for text in texts:
             bad = sorted(w for w in words if w in text)
             assert not bad, f"{anchor.id} 的输入「{text}」含判据词：{bad}"
+
+
+def test_the_emotion_variant_is_confounded_with_the_recall_block_and_says_so() -> None:
+    """**「只改情绪」的锚点变体在这个引擎里做不出来，而这条测试把它写明。**
+
+    情绪只能靠送礼或说话推，两者都会改写召回块——所以情绪变体必然连着改了她
+    记得的东西。这是引擎决定的，不是实现问题（好感那一维同理：好感只能由送礼和
+    话题产生，所以高好感必然伴随相应记忆）。
+
+    声明成 `{"emotion", "recall"}` 而不是放宽检查：**哪天有了别的推情绪的手段，
+    这条会因为「差得比声明的少」而红**，提醒去收紧。
+    """
+    assert_one_variable_apart(
+        BY_ID["reveal_uses_the_content"],
+        BY_ID["reveal_uses_the_content_destructive"],
+        DEFS,
+        expect={"emotion", "recall"},
+    )
+
+
+def test_the_confounded_ablation_that_fooled_me_is_now_caught() -> None:
+    """**复现那次真实的归因失败。**
+
+    我比较的两臂是「有音乐盒（往事已唤醒）」和「无音乐盒 + 十四句垫话」，测出
+    100.0% 对 33.3%、区间完全分离，据此做了修法——修法零效果（坑 #54）。回头看：
+    「有音乐盒」那臂是 `calm`，另一臂被垫话推成了 `destructive`，**两个变量混在
+    一起了**。
+
+    这条测试让那次错误的比较**现在会抛异常**：它同时差了召回块和情绪。
+    """
+    dirty = replace(
+        BY_ID["reveal_uses_the_content"],
+        id="dirty",
+        setup=BY_ID["reveal_uses_the_content"].setup + _chat(14),
+        question="外面现在到处都在传这件事。",
+    )
+
+    with pytest.raises(Confounded) as caught:
+        assert_one_variable_apart(BY_ID["reveal_uses_the_content"], dirty, DEFS, expect="recall")
+
+    assert "emotion" in str(caught.value)
+
+
+def test_the_check_names_every_dimension_that_moved() -> None:
+    """报出**全部**差异，不是第一处——只报一处的话修完还会撞第二处。"""
+    other = replace(BY_ID["reveal_uses_the_content"], id="other", question="换个问法？")
+
+    with pytest.raises(Confounded) as caught:
+        assert_one_variable_apart(BY_ID["reveal_uses_the_content"], other, DEFS, expect="emotion")
+
+    assert "question" in str(caught.value)
